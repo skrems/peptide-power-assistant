@@ -100,6 +100,13 @@ def init_db() -> None:
               published_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS peptides (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL UNIQUE,
+              notes TEXT,
+              created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS protocol_steps (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               protocol_id INTEGER NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
@@ -158,6 +165,7 @@ def init_db() -> None:
             """
         )
         seed_admin(conn)
+        seed_peptides(conn)
         seed_ghk_protocol(conn)
 
 
@@ -171,6 +179,21 @@ def seed_admin(conn: sqlite3.Connection) -> None:
         VALUES (?, ?, ?, 'admin', 1, ?)
         """,
         (ADMIN_EMAIL, password_hash(ADMIN_PASSWORD), "Admin", now_iso()),
+    )
+
+
+def seed_peptides(conn: sqlite3.Connection) -> None:
+    defaults = [
+        ("GHK-Cu", "Copper peptide protocols."),
+        ("SS-31", "Daily protocol candidate."),
+        ("Retatrutide", "Weekly or every-six-days protocol candidate."),
+    ]
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO peptides (name, notes, created_at)
+        VALUES (?, ?, ?)
+        """,
+        [(name, notes, now_iso()) for name, notes in defaults],
     )
 
 
@@ -347,6 +370,26 @@ def format_dose(amount: Any) -> str:
     except (TypeError, ValueError):
         return "0"
     return f"{value:g}"
+
+
+def peptide_name_from_form(data: dict[str, str]) -> str:
+    custom = data.get("peptide_name_other", "").strip()
+    selected = data.get("peptide_name", "").strip()
+    return custom or selected
+
+
+def peptide_select(conn: sqlite3.Connection, selected: str = "", include_other: bool = True) -> str:
+    peptides = query(conn, "SELECT * FROM peptides ORDER BY name")
+    names = [row["name"] for row in peptides]
+    options = []
+    if selected and selected not in names:
+        options.append(f'<option value="{h(selected)}" selected>{h(selected)}</option>')
+    for peptide in peptides:
+        is_selected = "selected" if peptide["name"] == selected else ""
+        options.append(f'<option value="{h(peptide["name"])}" {is_selected}>{h(peptide["name"])}</option>')
+    if include_other:
+        options.append('<option value="">Other / type below</option>')
+    return "\n".join(options)
 
 
 def with_flash(path: str, message: str) -> str:
@@ -547,7 +590,7 @@ def render_protocols(ctx: RequestContext, conn: sqlite3.Connection, params: dict
     editor = ""
     if ctx.user["role"] == "admin":
         editing = one(conn, "SELECT * FROM protocols WHERE id = ?", (edit_id,)) if edit_id else None
-        editor = protocol_editor(editing)
+        editor = protocol_editor(conn, editing)
 
     cards = []
     for protocol in protocols:
@@ -661,7 +704,7 @@ def render_protocols(ctx: RequestContext, conn: sqlite3.Connection, params: dict
     return layout(ctx, "/protocols", "Protocols", body)
 
 
-def protocol_editor(protocol: sqlite3.Row | None) -> str:
+def protocol_editor(conn: sqlite3.Connection, protocol: sqlite3.Row | None) -> str:
     title = "Edit protocol" if protocol else "Add protocol"
     protocol_id = protocol["id"] if protocol else ""
     name = protocol["name"] if protocol else ""
@@ -675,8 +718,13 @@ def protocol_editor(protocol: sqlite3.Row | None) -> str:
         <input type="hidden" name="protocol_id" value="{protocol_id}">
         <div class="grid two">
           <label>Name <input name="name" value="{h(name)}" placeholder="GHK-Cu 60-day ramp" required></label>
-          <label>Peptide <input name="peptide_name" value="{h(peptide)}" placeholder="GHK-Cu" required></label>
+          <label>Peptide
+            <select name="peptide_name">
+              {peptide_select(conn, peptide)}
+            </select>
+          </label>
         </div>
+        <label>Other peptide name <input name="peptide_name_other" placeholder="Only needed if not in the dropdown"></label>
         <label>Description <textarea name="description" placeholder="Plain-language schedule summary">{h(description)}</textarea></label>
         <div class="button-row">
           <button type="submit">Save protocol</button>
@@ -758,10 +806,15 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
       <div class="panel-head"><h2>Manual dose</h2></div>
       <form method="post" action="/log/manual" class="stack">
         <div class="grid three">
-          <label>Peptide <input name="peptide_name" placeholder="SS-31" required></label>
+          <label>Peptide
+            <select name="peptide_name">
+              {peptide_select(conn)}
+            </select>
+          </label>
           <label>Dose mg <input name="actual_dose_amount" inputmode="decimal" required></label>
           <label>Site <input name="site" placeholder="optional"></label>
         </div>
+        <label>Other peptide name <input name="peptide_name_other" placeholder="Only needed if not in the dropdown"></label>
         <label>Notes <input name="notes" placeholder="optional"></label>
         <div class="button-row"><button type="submit">Log manual dose</button></div>
       </form>
@@ -779,6 +832,7 @@ def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     if ctx.user["role"] != "admin":
         return layout(ctx, "/admin", "Admin", '<section class="panel"><div class="empty">Admin access required.</div></section>')
     users = query(conn, "SELECT * FROM users ORDER BY role, email")
+    peptides = query(conn, "SELECT * FROM peptides ORDER BY name")
     user_html = "".join(
         f"""
         <article class="item">
@@ -795,7 +849,32 @@ def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
         """
         for row in users
     )
+    peptide_html = "".join(
+        f"""
+        <article class="item">
+          <div class="item-title">
+            <div><h3>{h(row['name'])}</h3><p class="meta">{h(row['notes'])}</p></div>
+          </div>
+          <form method="post" action="/admin/peptides/delete" onsubmit="return confirm('Delete this peptide from the dropdown? Existing logs and protocols keep their text.');">
+            <input type="hidden" name="peptide_id" value="{row['id']}">
+            <button class="danger" type="submit">Delete</button>
+          </form>
+        </article>
+        """
+        for row in peptides
+    ) or '<div class="empty">No peptides yet.</div>'
     body = f"""
+    <section class="panel">
+      <div class="panel-head"><h2>Peptides</h2></div>
+      <form method="post" action="/admin/peptides" class="stack">
+        <div class="grid two">
+          <label>Name <input name="name" placeholder="BPC-157" required></label>
+          <label>Notes <input name="notes" placeholder="optional"></label>
+        </div>
+        <div class="button-row"><button type="submit">Add peptide</button></div>
+      </form>
+      <div class="card-list">{peptide_html}</div>
+    </section>
     <section class="panel">
       <div class="panel-head"><h2>Add user</h2></div>
       <form method="post" action="/admin/users" class="stack">
@@ -974,6 +1053,14 @@ class App(BaseHTTPRequestHandler):
                 self.require_admin(ctx)
                 conn.execute("UPDATE users SET active = ? WHERE id = ?", (int(data["active"]), int(data["user_id"])))
                 return self.redirect(with_flash("/admin", "User updated"))
+            if parsed.path == "/admin/peptides":
+                self.require_admin(ctx)
+                self.create_peptide(conn, data)
+                return self.redirect(with_flash("/admin", "Peptide added"))
+            if parsed.path == "/admin/peptides/delete":
+                self.require_admin(ctx)
+                conn.execute("DELETE FROM peptides WHERE id = ?", (int(data["peptide_id"]),))
+                return self.redirect(with_flash("/admin", "Peptide deleted"))
         self.not_found()
 
     def context(self) -> RequestContext:
@@ -1087,6 +1174,9 @@ class App(BaseHTTPRequestHandler):
         )
 
     def log_manual(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+        peptide_name = peptide_name_from_form(data)
+        if not peptide_name:
+            raise ValueError("Choose or enter a peptide name.")
         conn.execute(
             """
             INSERT INTO dose_logs
@@ -1095,7 +1185,7 @@ class App(BaseHTTPRequestHandler):
             """,
             (
                 user_id,
-                data["peptide_name"].strip(),
+                peptide_name,
                 float(data["actual_dose_amount"]),
                 data.get("site", "").strip(),
                 data.get("notes", "").strip(),
@@ -1106,8 +1196,10 @@ class App(BaseHTTPRequestHandler):
     def save_protocol(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> int:
         protocol_id = int(data.get("protocol_id") or 0)
         name = data["name"].strip()
-        peptide_name = data["peptide_name"].strip()
+        peptide_name = peptide_name_from_form(data)
         description = data.get("description", "").strip()
+        if not peptide_name:
+            raise ValueError("Choose or enter a peptide name.")
         if protocol_id:
             conn.execute(
                 """
@@ -1188,6 +1280,18 @@ class App(BaseHTTPRequestHandler):
                 data.get("role", "member"),
                 now_iso(),
             ),
+        )
+
+    def create_peptide(self, conn: sqlite3.Connection, data: dict[str, str]) -> None:
+        name = data["name"].strip()
+        if not name:
+            raise ValueError("Enter a peptide name.")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO peptides (name, notes, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (name, data.get("notes", "").strip(), now_iso()),
         )
 
     def require_admin(self, ctx: RequestContext) -> None:

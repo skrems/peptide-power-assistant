@@ -92,6 +92,7 @@ def main() -> int:
 
         protocols = client.get("/protocols")
         require(protocols, "GHK-Cu 60-day ramp")
+        require(protocols, "<select name=\"peptide_name\">")
         require(protocols, "Days 1-15: 1 mg daily")
         require(protocols, "Days 16-30: 2 mg daily")
         require(protocols, "Days 31-60: 0 mg rest")
@@ -120,11 +121,27 @@ def main() -> int:
         require(logged_today, "smoke test")
 
         log = client.get("/log")
+        require(log, "<select name=\"peptide_name\">")
+        require(log, "SS-31")
+        client.post(
+            "/log/manual",
+            {
+                "peptide_name": "SS-31",
+                "peptide_name_other": "",
+                "actual_dose_amount": "5",
+                "site": "arm",
+                "notes": "manual smoke",
+            },
+        )
+        log = client.get("/log")
         require(log, "Dose history")
         require(log, "GHK-Cu")
         require(log, "abdomen")
+        require(log, "manual smoke")
 
         admin = client.get("/admin")
+        require(admin, "Peptides")
+        require(admin, "Add peptide")
         require(admin, "Add user")
         require(admin, ADMIN_EMAIL)
 
@@ -142,4 +159,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

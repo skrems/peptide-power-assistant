@@ -9,6 +9,7 @@ This is a clean MVP rewrite. It does not use AWS, Amplify, Cognito, AppSync, or 
 - Local username/password login.
 - Admin and member roles.
 - Admin protocol create, edit, publish, retire, and delete.
+- Admin peptide catalog for dropdowns in protocols and manual logging.
 - Editable protocol day ranges and dose steps.
 - Published protocol activation for users.
 - Today view showing protocol day, dose due, rest days, and completion state.
@@ -16,6 +17,19 @@ This is a clean MVP rewrite. It does not use AWS, Amplify, Cognito, AppSync, or 
 - Daily check-in notes.
 - PWA manifest so the app can be added to an iPhone home screen.
 - SQLite database stored at `/data/app.db`.
+
+## Peptides
+
+Admins add and remove peptide names from the **Admin** tab. The catalog feeds the peptide dropdowns used by:
+
+- Manual dose logging.
+- Protocol creation and editing.
+
+Starter peptides are seeded automatically:
+
+- GHK-Cu
+- SS-31
+- Retatrutide
 
 ## Run Locally
 
