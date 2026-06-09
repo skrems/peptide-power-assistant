@@ -359,6 +359,54 @@ button.text {
   display: inline;
 }
 
+.site-picker {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+  padding: 12px;
+}
+
+.site-figure {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--soft);
+  min-height: 170px;
+}
+
+.site-figure img {
+  width: min(118px, 100%);
+  height: auto;
+  display: block;
+}
+
+.site-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.site-button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--accent-dark);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.site-button.selected {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 @media (max-width: 720px) {
   .app-shell {
     padding: 14px 12px 92px;
@@ -384,5 +432,17 @@ button.text {
   .button-row > button,
   .button-row > .button {
     flex: 1 1 150px;
+  }
+
+  .site-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .site-figure {
+    min-height: 140px;
+  }
+
+  .site-figure img {
+    width: 104px;
   }
 }

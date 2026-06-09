@@ -320,6 +320,19 @@ def layout(ctx: RequestContext, active: str, title: str, body: str) -> bytes:
         if ("serviceWorker" in navigator) {{
           navigator.serviceWorker.register("/service-worker.js").catch(() => undefined);
         }}
+        document.addEventListener("click", (event) => {{
+          const button = event.target.closest(".site-button");
+          if (!button) return;
+          const form = button.closest("form");
+          const input = form && form.querySelector('input[name="site"]');
+          if (!input) return;
+          input.value = button.dataset.site || "";
+          form.querySelectorAll(".site-button").forEach((candidate) => {{
+            const selected = candidate === button;
+            candidate.classList.toggle("selected", selected);
+            candidate.setAttribute("aria-pressed", selected ? "true" : "false");
+          }});
+        }});
       </script>
     </body>
     </html>"""
@@ -390,6 +403,33 @@ def peptide_select(conn: sqlite3.Connection, selected: str = "", include_other: 
     if include_other:
         options.append('<option value="">Other / type below</option>')
     return "\n".join(options)
+
+
+def injection_site_picker() -> str:
+    sites = [
+        "Abdomen left",
+        "Abdomen right",
+        "Thigh left",
+        "Thigh right",
+        "Upper arm left",
+        "Upper arm right",
+        "Glute left",
+        "Glute right",
+    ]
+    buttons = "".join(
+        f'<button class="site-button" type="button" data-site="{h(site)}" aria-pressed="false">{h(site)}</button>'
+        for site in sites
+    )
+    return f"""
+    <div class="site-picker">
+      <div class="site-figure">
+        <img src="/static/body-sites.svg" alt="Body diagram with common injection regions">
+      </div>
+      <div class="site-options" aria-label="Injection site choices">
+        {buttons}
+      </div>
+    </div>
+    """
 
 
 def with_flash(path: str, message: str) -> str:
@@ -468,6 +508,7 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
               <label>Actual dose <input name="actual_dose_amount" inputmode="decimal" value="{format_dose(step['dose_amount'])}" required></label>
               <label>Site <input name="site" placeholder="optional"></label>
               <label class="grid-span">Notes <input name="notes" placeholder="optional"></label>
+              {injection_site_picker()}
               <div class="button-row"><button type="submit">Log completed</button></div>
             </form>
             """
@@ -814,6 +855,7 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
           <label>Dose mg <input name="actual_dose_amount" inputmode="decimal" required></label>
           <label>Site <input name="site" placeholder="optional"></label>
         </div>
+        {injection_site_picker()}
         <label>Other peptide name <input name="peptide_name_other" placeholder="Only needed if not in the dropdown"></label>
         <label>Notes <input name="notes" placeholder="optional"></label>
         <div class="button-row"><button type="submit">Log manual dose</button></div>
