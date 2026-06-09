@@ -42,6 +42,47 @@ Override with environment variables:
 PEPTIDE_ADMIN_EMAIL=you@example.com PEPTIDE_ADMIN_PASSWORD='strong password' python -m app.server
 ```
 
+## Test On This MacBook
+
+Run the smoke test before deploying anywhere:
+
+```bash
+make smoke
+```
+
+The smoke test starts the app with a throwaway SQLite database, logs in, checks the seeded GHK-Cu protocol, activates it, logs a dose, and verifies the admin page.
+
+For container testing on macOS, install one container runtime first:
+
+```bash
+brew install --cask orbstack
+```
+
+or:
+
+```bash
+brew install --cask docker
+```
+
+Then build and run the same container you will move to the Zimaboard:
+
+```bash
+make docker-build
+make docker-up
+```
+
+Open:
+
+```text
+http://127.0.0.1:8080
+```
+
+Stop it with:
+
+```bash
+make docker-down
+```
+
 ## Run On Zimaboard
 
 ```bash
@@ -79,4 +120,3 @@ docker compose up -d
 ## Medical Safety
 
 This app is an arithmetic and logging helper only. Confirm peptide identity, dose, route, reconstitution, and schedule with a clinician or pharmacist.
-
