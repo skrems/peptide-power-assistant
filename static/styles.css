@@ -362,7 +362,7 @@ button.text {
 .site-picker {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
   border: 1px solid var(--line);
@@ -377,7 +377,7 @@ button.text {
   gap: 4px;
   border-radius: 8px;
   background: var(--soft);
-  min-height: 108px;
+  min-height: 126px;
   padding: 8px;
   color: var(--accent-dark);
   font-size: 11px;
@@ -388,7 +388,7 @@ button.text {
 }
 
 .site-figure img {
-  width: 54px;
+  width: 76px;
   height: auto;
   display: block;
 }
@@ -444,15 +444,15 @@ button.text {
   }
 
   .site-picker {
-    grid-template-columns: 76px minmax(0, 1fr);
+    grid-template-columns: 88px minmax(0, 1fr);
   }
 
   .site-figure {
-    min-height: 104px;
+    min-height: 118px;
   }
 
   .site-figure img {
-    width: 48px;
+    width: 68px;
   }
 
   .site-options {

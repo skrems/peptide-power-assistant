@@ -104,8 +104,8 @@ def main() -> int:
         require(today, "protocol day 1")
         require(today, "1 mg")
         require(today, "Log completed")
-        require(today, "/static/body-sites.svg")
-        require(today, "Left belly")
+        require(today, "/static/body-map.svg")
+        require(today, "Left Deltoid")
 
         client.post(
             "/log/protocol",
@@ -125,8 +125,8 @@ def main() -> int:
         log = client.get("/log")
         require(log, "<select name=\"peptide_name\">")
         require(log, "SS-31")
-        require(log, "/static/body-sites.svg")
-        require(log, "Right thigh")
+        require(log, "/static/body-map.svg")
+        require(log, "Right Thigh")
         client.post(
             "/log/manual",
             {
