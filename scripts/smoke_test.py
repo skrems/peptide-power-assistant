@@ -175,6 +175,7 @@ def main() -> int:
         logged_today = client.get("/")
         require(logged_today, "done")
         require(logged_today, "smoke test")
+        require(logged_today, "--peptide-color: #7e3bb5")
 
         log = client.get("/log")
         require(log, "<select name=\"peptide_name\">")
@@ -201,10 +202,20 @@ def main() -> int:
         require(log, "abdomen")
         require(log, "2026-05-03T20:00:00")
         require(log, "manual smoke")
+        require(log, "--peptide-color: #111111")
+
+        calendar = client.get("/calendar?month=2026-05")
+        require(calendar, "Calendar")
+        require(calendar, "May 2026")
+        require(calendar, "SS-31")
+        require(calendar, "--peptide-color: #111111")
 
         admin = client.get("/admin")
         require(admin, "Peptides")
         require(admin, "Add peptide")
+        require(admin, 'value="#7e3bb5"')
+        require(admin, 'value="#e86f00"')
+        require(admin, 'value="#8b0000"')
         require(admin, "Add user")
         require(admin, ADMIN_EMAIL)
 

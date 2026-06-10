@@ -1,4 +1,4 @@
-const CACHE_NAME = "peptide-power-assistant-v1";
+const CACHE_NAME = "peptide-power-assistant-v2";
 const CORE_ASSETS = [
   "/",
   "/static/styles.css",
@@ -24,4 +24,3 @@ self.addEventListener("fetch", (event) => {
     fetch(event.request).catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))
   );
 });
-

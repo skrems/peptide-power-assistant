@@ -9,8 +9,9 @@ import secrets
 import sqlite3
 import sys
 import urllib.parse
+import calendar as calendar_lib
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -85,6 +86,16 @@ WEEKDAYS = [
     ("sun", "Sun"),
 ]
 
+DEFAULT_PEPTIDE_COLORS = {
+    "ghk-cu": "#7e3bb5",
+    "mots-c": "#e86f00",
+    "retatrutide": "#8b0000",
+    "ss-31": "#111111",
+    "bpc-157": "#0b5d2a",
+    "tp-500": "#72b856",
+    "tb-500": "#72b856",
+}
+
 
 def password_hash(password: str) -> str:
     salt = secrets.token_hex(16)
@@ -132,6 +143,7 @@ def init_db() -> None:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               name TEXT NOT NULL UNIQUE,
               notes TEXT,
+              color TEXT NOT NULL DEFAULT '#60706a',
               created_at TEXT NOT NULL
             );
 
@@ -195,6 +207,7 @@ def init_db() -> None:
             """
         )
         migrate_protocol_steps(conn)
+        migrate_peptides(conn)
         seed_admin(conn)
         seed_peptides(conn)
         seed_ghk_protocol(conn)
@@ -266,6 +279,17 @@ def migrate_protocol_steps(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
 
 
+def migrate_peptides(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(peptides)").fetchall()}
+    if "color" not in columns:
+        conn.execute("ALTER TABLE peptides ADD COLUMN color TEXT NOT NULL DEFAULT '#60706a'")
+    for peptide_key, color in DEFAULT_PEPTIDE_COLORS.items():
+        conn.execute(
+            "UPDATE peptides SET color = ? WHERE lower(name) = ? AND (color IS NULL OR color = '' OR color = '#60706a')",
+            (color, peptide_key),
+        )
+
+
 def seed_admin(conn: sqlite3.Connection) -> None:
     row = conn.execute("SELECT id FROM users WHERE email = ?", (ADMIN_EMAIL,)).fetchone()
     if row:
@@ -281,16 +305,19 @@ def seed_admin(conn: sqlite3.Connection) -> None:
 
 def seed_peptides(conn: sqlite3.Connection) -> None:
     defaults = [
-        ("GHK-Cu", "Copper peptide protocols."),
-        ("SS-31", "Daily protocol candidate."),
-        ("Retatrutide", "Weekly or every-six-days protocol candidate."),
+        ("GHK-Cu", "Copper peptide protocols.", DEFAULT_PEPTIDE_COLORS["ghk-cu"]),
+        ("MOTS-c", "Weekday cadence protocol candidate.", DEFAULT_PEPTIDE_COLORS["mots-c"]),
+        ("Retatrutide", "Weekly or every-six-days protocol candidate.", DEFAULT_PEPTIDE_COLORS["retatrutide"]),
+        ("SS-31", "Daily protocol candidate.", DEFAULT_PEPTIDE_COLORS["ss-31"]),
+        ("BPC-157", "Recovery protocol candidate.", DEFAULT_PEPTIDE_COLORS["bpc-157"]),
+        ("TP-500", "Recovery protocol candidate.", DEFAULT_PEPTIDE_COLORS["tp-500"]),
     ]
     conn.executemany(
         """
-        INSERT OR IGNORE INTO peptides (name, notes, created_at)
-        VALUES (?, ?, ?)
+        INSERT OR IGNORE INTO peptides (name, notes, color, created_at)
+        VALUES (?, ?, ?, ?)
         """,
-        [(name, notes, now_iso()) for name, notes in defaults],
+        [(name, notes, color, now_iso()) for name, notes, color in defaults],
     )
 
 
@@ -361,6 +388,7 @@ def icon(name: str) -> str:
         "today": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v15H4z"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>',
         "protocols": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 4h10l3 3v13H7z"/><path d="M17 4v4h4M10 12h7M10 16h7"/></svg>',
         "log": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
+        "calendar": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v15H4z"/><path d="M8 3v4M16 3v4M4 10h16"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/></svg>',
         "admin": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l7 4v5c0 5-3 8-7 9-4-1-7-4-7-9V7z"/><path d="M9 12l2 2 4-5"/></svg>',
         "settings": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 12h2M18 12h2M12 4v2M12 18v2"/></svg>',
     }
@@ -410,6 +438,7 @@ def layout(ctx: RequestContext, active: str, title: str, body: str) -> bytes:
         {nav_item("/", "Today", active, icon("today"))}
         {nav_item("/protocols", "Protocols", active, icon("protocols"))}
         {nav_item("/log", "Log", active, icon("log"))}
+        {nav_item("/calendar", "Calendar", active, icon("calendar"))}
         {admin_nav}
         {nav_item("/settings", "Settings", active, icon("settings"))}
       </nav>
@@ -492,6 +521,57 @@ def format_dose(amount: Any) -> str:
     except (TypeError, ValueError):
         return "0"
     return f"{value:g}"
+
+
+def peptide_key(name: str | None) -> str:
+    return (name or "").strip().lower()
+
+
+def normalize_color(value: str | None, fallback: str = "#60706a") -> str:
+    raw = (value or "").strip()
+    if len(raw) == 7 and raw.startswith("#") and all(char in "0123456789abcdefABCDEF" for char in raw[1:]):
+        return raw.lower()
+    return fallback
+
+
+def default_color_for_peptide(name: str | None) -> str:
+    return DEFAULT_PEPTIDE_COLORS.get(peptide_key(name), "#60706a")
+
+
+def peptide_colors(conn: sqlite3.Connection) -> dict[str, str]:
+    colors = {key: color for key, color in DEFAULT_PEPTIDE_COLORS.items()}
+    rows = query(conn, "SELECT name, color FROM peptides")
+    for row in rows:
+        colors[peptide_key(row["name"])] = normalize_color(row["color"], default_color_for_peptide(row["name"]))
+    return colors
+
+
+def color_for_peptide(name: str | None, colors: dict[str, str]) -> str:
+    key = peptide_key(name)
+    return colors.get(key, default_color_for_peptide(name))
+
+
+def peptide_chip(name: str, color: str) -> str:
+    return f'<span class="peptide-chip" style="--peptide-color: {h(normalize_color(color))}">{h(name)}</span>'
+
+
+def add_months(month_start: date, months: int) -> date:
+    month_index = month_start.month - 1 + months
+    year = month_start.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, 1)
+
+
+def month_from_params(params: dict[str, list[str]]) -> date:
+    raw = params.get("month", [""])[0]
+    if raw:
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m").date()
+            return date(parsed.year, parsed.month, 1)
+        except ValueError:
+            pass
+    today = date.today()
+    return date(today.year, today.month, 1)
 
 
 def int_or_default(value: Any, default: int) -> int:
@@ -716,6 +796,7 @@ def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
 
 def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     assert ctx.user
+    colors = peptide_colors(conn)
     tasks = get_due_tasks(conn, ctx.user["id"])
     cards: list[str] = []
     for task in tasks:
@@ -777,7 +858,7 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     recent_html = "".join(
         f"""
         <article class="item">
-          <div class="item-title"><h3>{h(row['peptide_name'])}</h3><span class="badge">{h(row['status'])}</span></div>
+          <div class="item-title"><h3>{peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['status'])}</span></div>
           <p class="meta">{h(row['logged_at'])} · {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</p>
           <p class="meta">{h(row['notes'])}</p>
         </article>
@@ -1066,6 +1147,7 @@ def step_list(protocol_id: int) -> str:
 
 def render_log(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     assert ctx.user
+    colors = peptide_colors(conn)
     logs = query(
         conn,
         "SELECT * FROM dose_logs WHERE user_id = ? ORDER BY logged_at DESC LIMIT 100",
@@ -1074,7 +1156,7 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     log_html = "".join(
         f"""
         <article class="item">
-          <div class="item-title"><h3>{h(row['peptide_name'])}</h3><span class="badge">{h(row['source'])}</span></div>
+          <div class="item-title"><h3>{peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
           <p class="meta">{h(row['logged_at'])} · {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</p>
           <p class="meta">{'protocol day ' + str(row['protocol_day']) if row['protocol_day'] else ''} {h(row['site'])}</p>
           <p>{h(row['notes'])}</p>
@@ -1110,6 +1192,81 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     return layout(ctx, "/log", "Log", body)
 
 
+def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[str, list[str]]) -> bytes:
+    assert ctx.user
+    colors = peptide_colors(conn)
+    month_start = month_from_params(params)
+    next_month = add_months(month_start, 1)
+    prev_month = add_months(month_start, -1)
+    month_end = next_month - timedelta(days=1)
+    rows = query(
+        conn,
+        """
+        SELECT substr(logged_at, 1, 10) AS log_date, peptide_name, count(*) AS dose_count
+        FROM dose_logs
+        WHERE user_id = ? AND substr(logged_at, 1, 10) >= ? AND substr(logged_at, 1, 10) <= ?
+        GROUP BY log_date, peptide_name
+        ORDER BY log_date, lower(peptide_name)
+        """,
+        (ctx.user["id"], month_start.isoformat(), month_end.isoformat()),
+    )
+    by_day: dict[str, list[sqlite3.Row]] = {}
+    seen_peptides: dict[str, str] = {}
+    for row in rows:
+        by_day.setdefault(row["log_date"], []).append(row)
+        seen_peptides[row["peptide_name"]] = color_for_peptide(row["peptide_name"], colors)
+
+    weeks = calendar_lib.Calendar(firstweekday=0).monthdatescalendar(month_start.year, month_start.month)
+    weekday_header = "".join(f'<div class="calendar-weekday">{label}</div>' for _code, label in WEEKDAYS)
+    day_cells: list[str] = []
+    for week in weeks:
+        for day in week:
+            iso = day.isoformat()
+            day_rows = by_day.get(iso, [])
+            outside = " outside" if day.month != month_start.month else ""
+            today_class = " today" if iso == today_iso() else ""
+            chips = "".join(
+                f"""
+                <span class="calendar-dose" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
+                  <span>{h(row['peptide_name'])}</span>
+                  <strong>{row['dose_count']}</strong>
+                </span>
+                """
+                for row in day_rows
+            )
+            day_cells.append(
+                f"""
+                <div class="calendar-day{outside}{today_class}">
+                  <div class="calendar-date">{day.day}</div>
+                  <div class="calendar-doses">{chips}</div>
+                </div>
+                """
+            )
+    legend = "".join(
+        peptide_chip(name, color)
+        for name, color in sorted(seen_peptides.items(), key=lambda item: item[0].lower())
+    ) or '<p class="meta">No doses logged this month.</p>'
+    month_label = month_start.strftime("%B %Y")
+    body = f"""
+    <section class="panel">
+      <div class="panel-head">
+        <div><p class="eyebrow">Dose calendar</p><h2>{h(month_label)}</h2></div>
+        <div class="button-row compact">
+          <a class="button secondary" href="/calendar?month={prev_month.strftime('%Y-%m')}">Previous</a>
+          <a class="button secondary" href="/calendar?month={date.today().strftime('%Y-%m')}">Today</a>
+          <a class="button secondary" href="/calendar?month={next_month.strftime('%Y-%m')}">Next</a>
+        </div>
+      </div>
+      <div class="calendar-legend">{legend}</div>
+      <div class="calendar-grid">
+        {weekday_header}
+        {"".join(day_cells)}
+      </div>
+    </section>
+    """
+    return layout(ctx, "/calendar", "Calendar", body)
+
+
 def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     assert ctx.user
     if ctx.user["role"] != "admin":
@@ -1136,8 +1293,17 @@ def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
         f"""
         <article class="item">
           <div class="item-title">
-            <div><h3>{h(row['name'])}</h3><p class="meta">{h(row['notes'])}</p></div>
+            <div><h3>{peptide_chip(row['name'], row['color'])}</h3><p class="meta">{h(row['notes'])}</p></div>
           </div>
+          <form method="post" action="/admin/peptides/update" class="stack">
+            <input type="hidden" name="peptide_id" value="{row['id']}">
+            <div class="grid three">
+              <label>Name <input name="name" value="{h(row['name'])}" required></label>
+              <label>Color <input name="color" type="color" value="{h(normalize_color(row['color'], default_color_for_peptide(row['name'])))}"></label>
+              <label>Notes <input name="notes" value="{h(row['notes'])}" placeholder="optional"></label>
+            </div>
+            <div class="button-row"><button class="secondary" type="submit">Save peptide</button></div>
+          </form>
           <form method="post" action="/admin/peptides/delete" onsubmit="return confirm('Delete this peptide from the dropdown? Existing logs and protocols keep their text.');">
             <input type="hidden" name="peptide_id" value="{row['id']}">
             <button class="danger" type="submit">Delete</button>
@@ -1150,8 +1316,9 @@ def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     <section class="panel">
       <div class="panel-head"><h2>Peptides</h2></div>
       <form method="post" action="/admin/peptides" class="stack">
-        <div class="grid two">
+        <div class="grid three">
           <label>Name <input name="name" placeholder="BPC-157" required></label>
+          <label>Color <input name="color" type="color" value="#60706a"></label>
           <label>Notes <input name="notes" placeholder="optional"></label>
         </div>
         <div class="button-row"><button type="submit">Add peptide</button></div>
@@ -1257,6 +1424,8 @@ class App(BaseHTTPRequestHandler):
                 return self.html(render_protocols(ctx, conn, params))
             if parsed.path == "/log":
                 return self.html(render_log(ctx, conn))
+            if parsed.path == "/calendar":
+                return self.html(render_calendar(ctx, conn, params))
             if parsed.path == "/admin":
                 return self.html(render_admin(ctx, conn))
             if parsed.path == "/settings":
@@ -1340,6 +1509,10 @@ class App(BaseHTTPRequestHandler):
                 self.require_admin(ctx)
                 self.create_peptide(conn, data)
                 return self.redirect(with_flash("/admin", "Peptide added"))
+            if parsed.path == "/admin/peptides/update":
+                self.require_admin(ctx)
+                self.update_peptide(conn, data)
+                return self.redirect(with_flash("/admin", "Peptide updated"))
             if parsed.path == "/admin/peptides/delete":
                 self.require_admin(ctx)
                 conn.execute("DELETE FROM peptides WHERE id = ?", (int(data["peptide_id"]),))
@@ -1579,12 +1752,31 @@ class App(BaseHTTPRequestHandler):
         name = data["name"].strip()
         if not name:
             raise ValueError("Enter a peptide name.")
+        color = normalize_color(data.get("color"), default_color_for_peptide(name))
         conn.execute(
             """
-            INSERT OR IGNORE INTO peptides (name, notes, created_at)
-            VALUES (?, ?, ?)
+            INSERT OR IGNORE INTO peptides (name, notes, color, created_at)
+            VALUES (?, ?, ?, ?)
             """,
-            (name, data.get("notes", "").strip(), now_iso()),
+            (name, data.get("notes", "").strip(), color, now_iso()),
+        )
+
+    def update_peptide(self, conn: sqlite3.Connection, data: dict[str, str]) -> None:
+        name = data["name"].strip()
+        if not name:
+            raise ValueError("Enter a peptide name.")
+        conn.execute(
+            """
+            UPDATE peptides
+            SET name = ?, notes = ?, color = ?
+            WHERE id = ?
+            """,
+            (
+                name,
+                data.get("notes", "").strip(),
+                normalize_color(data.get("color"), default_color_for_peptide(name)),
+                int(data["peptide_id"]),
+            ),
         )
 
     def require_admin(self, ctx: RequestContext) -> None:
