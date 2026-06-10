@@ -203,12 +203,88 @@ def main() -> int:
         require(log, "2026-05-03T20:00:00")
         require(log, "manual smoke")
         require(log, "--peptide-color: #111111")
+        require(log, "Filter by peptide")
+        require(log, "Edit")
+        require(log, "Delete")
+
+        filtered_log = client.get("/log?peptide=SS-31")
+        require(filtered_log, "manual smoke")
+        require(filtered_log, "value=\"SS-31\" selected")
+
+        edit_log = client.get("/log?peptide=SS-31&edit=2")
+        require(edit_log, "edit-item")
+        require(edit_log, "SS-31")
+        require(edit_log, "Save dose")
+        client.post(
+            "/logs/save",
+            {
+                "log_id": "2",
+                "return_to": "/log?peptide=SS-31",
+                "peptide_name": "SS-31",
+                "peptide_name_other": "",
+                "logged_at": "2026-05-03T20:00",
+                "actual_dose_amount": "6",
+                "site": "Right Thigh",
+                "notes": "manual edited",
+            },
+        )
+        edited_log = client.get("/log?peptide=SS-31")
+        require(edited_log, "manual edited")
+        require(edited_log, "6 mg")
+        require(edited_log, "Right Thigh")
 
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")
         require(calendar, "May 2026")
         require(calendar, "SS-31")
         require(calendar, "--peptide-color: #111111")
+        require(calendar, "Add dose")
+        require(calendar, "Logged this day")
+
+        client.post(
+            "/logs/save",
+            {
+                "log_id": "",
+                "return_to": "/calendar?month=2026-05&date=2026-05-04",
+                "peptide_name": "Retatrutide",
+                "peptide_name_other": "",
+                "logged_at": "2026-05-04T08:00",
+                "actual_dose_amount": "2",
+                "site": "Left Abdomen",
+                "notes": "calendar add",
+            },
+        )
+        calendar_day = client.get("/calendar?month=2026-05&date=2026-05-04")
+        require(calendar_day, "Retatrutide")
+        require(calendar_day, "calendar add")
+        require(calendar_day, "--peptide-color: #8b0000")
+        require(calendar_day, "Edit")
+        client.post(
+            "/logs/save",
+            {
+                "log_id": "3",
+                "return_to": "/calendar?month=2026-05&date=2026-05-04",
+                "peptide_name": "Retatrutide",
+                "peptide_name_other": "",
+                "logged_at": "2026-05-04T20:00",
+                "actual_dose_amount": "2.5",
+                "site": "Right Abdomen",
+                "notes": "calendar edited",
+            },
+        )
+        calendar_day = client.get("/calendar?month=2026-05&date=2026-05-04")
+        require(calendar_day, "calendar edited")
+        require(calendar_day, "2.5 mg")
+        client.post(
+            "/logs/delete",
+            {
+                "log_id": "3",
+                "return_to": "/calendar?month=2026-05&date=2026-05-04",
+            },
+        )
+        calendar_day = client.get("/calendar?month=2026-05&date=2026-05-04")
+        if "calendar edited" in calendar_day:
+            raise AssertionError("calendar delete did not remove the edited log")
 
         admin = client.get("/admin")
         require(admin, "Peptides")

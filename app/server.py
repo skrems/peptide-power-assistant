@@ -574,6 +574,13 @@ def month_from_params(params: dict[str, list[str]]) -> date:
     return date(today.year, today.month, 1)
 
 
+def date_from_param(value: str | None, fallback: date) -> date:
+    try:
+        return date.fromisoformat((value or "").strip())
+    except ValueError:
+        return fallback
+
+
 def int_or_default(value: Any, default: int) -> int:
     try:
         return int(value)
@@ -707,7 +714,7 @@ def peptide_select(conn: sqlite3.Connection, selected: str = "", include_other: 
     return "\n".join(options)
 
 
-def injection_site_picker() -> str:
+def injection_site_picker(selected_site: str = "") -> str:
     sites = [
         "Left Deltoid",
         "Right Deltoid",
@@ -717,7 +724,7 @@ def injection_site_picker() -> str:
         "Right Thigh",
     ]
     buttons = "".join(
-        f'<button class="site-button" type="button" data-site="{h(site)}" aria-pressed="false">{h(site)}</button>'
+        f'<button class="site-button {"selected" if site == selected_site else ""}" type="button" data-site="{h(site)}" aria-pressed="{"true" if site == selected_site else "false"}">{h(site)}</button>'
         for site in sites
     )
     return f"""
@@ -733,11 +740,12 @@ def injection_site_picker() -> str:
     """
 
 
-def logged_at_picker() -> str:
+def logged_at_picker(value: str | None = None) -> str:
+    field_value = (value or now_datetime_local()).replace("T", " ")[:16].replace(" ", "T")
     return f"""
     <div class="datetime-picker">
       <label>Dose date and time
-        <input name="logged_at" type="datetime-local" value="{now_datetime_local()}" required>
+        <input name="logged_at" type="datetime-local" value="{h(field_value)}" required>
       </label>
       <div class="time-shortcuts" aria-label="Quick time choices">
         <button class="time-button" type="button" data-time="08:00">Morning</button>
@@ -750,6 +758,63 @@ def logged_at_picker() -> str:
 def with_flash(path: str, message: str) -> str:
     separator = "&" if "?" in path else "?"
     return f"{path}{separator}flash={urllib.parse.quote(message)}"
+
+
+def safe_return_to(value: str | None, fallback: str = "/log") -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return fallback
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.scheme or parsed.netloc or not raw.startswith("/") or raw.startswith("//"):
+        return fallback
+    return raw
+
+
+def current_path(path: str, params: dict[str, list[str]], exclude: set[str] | None = None) -> str:
+    excluded = {"flash", "error"} | (exclude or set())
+    clean_params = {
+        key: values[-1]
+        for key, values in params.items()
+        if values and values[-1] and key not in excluded
+    }
+    query = urllib.parse.urlencode(clean_params)
+    return f"{path}?{query}" if query else path
+
+
+def log_form(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row | None = None,
+    *,
+    return_to: str = "/log",
+    default_logged_at: str | None = None,
+    button_label: str = "Save dose",
+) -> str:
+    log_id = row["id"] if row else ""
+    peptide_name = row["peptide_name"] if row else ""
+    dose_amount = format_dose(row["actual_dose_amount"]) if row else ""
+    site = row["site"] if row else ""
+    notes = row["notes"] if row else ""
+    logged_at = row["logged_at"] if row else default_logged_at
+    return f"""
+    <form method="post" action="/logs/save" class="stack">
+      <input type="hidden" name="log_id" value="{log_id}">
+      <input type="hidden" name="return_to" value="{h(return_to)}">
+      {logged_at_picker(logged_at)}
+      <div class="grid three">
+        <label>Peptide
+          <select name="peptide_name">
+            {peptide_select(conn, peptide_name)}
+          </select>
+        </label>
+        <label>Dose mg <input name="actual_dose_amount" inputmode="decimal" value="{h(dose_amount)}" required></label>
+        <label>Site <input name="site" value="{h(site)}" placeholder="optional"></label>
+      </div>
+      {injection_site_picker(site)}
+      <label>Other peptide name <input name="peptide_name_other" placeholder="Only needed if not in the dropdown"></label>
+      <label>Notes <input name="notes" value="{h(notes)}" placeholder="optional"></label>
+      <div class="button-row"><button type="submit">{h(button_label)}</button></div>
+    </form>
+    """
 
 
 def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:
@@ -1145,51 +1210,97 @@ def step_list(protocol_id: int) -> str:
     ) + "</div>"
 
 
-def render_log(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
+def render_log(ctx: RequestContext, conn: sqlite3.Connection, params: dict[str, list[str]]) -> bytes:
     assert ctx.user
     colors = peptide_colors(conn)
+    selected_peptide = params.get("peptide", [""])[0].strip()
+    edit_id = int_or_default(params.get("edit", ["0"])[0], 0)
+    return_to = current_path("/log", params, {"edit"})
+    filter_options = ['<option value="">All peptides</option>']
+    peptide_names = [row["name"] for row in query(conn, "SELECT name FROM peptides ORDER BY name")]
+    if selected_peptide and selected_peptide not in peptide_names:
+        filter_options.append(f'<option value="{h(selected_peptide)}" selected>{h(selected_peptide)}</option>')
+    for name in peptide_names:
+        filter_options.append(f'<option value="{h(name)}" {"selected" if name == selected_peptide else ""}>{h(name)}</option>')
+
+    where = "WHERE user_id = ?"
+    args: list[Any] = [ctx.user["id"]]
+    if selected_peptide:
+        where += " AND peptide_name = ?"
+        args.append(selected_peptide)
     logs = query(
         conn,
-        "SELECT * FROM dose_logs WHERE user_id = ? ORDER BY logged_at DESC LIMIT 100",
-        (ctx.user["id"],),
+        f"SELECT * FROM dose_logs {where} ORDER BY logged_at DESC LIMIT 100",
+        tuple(args),
     )
     log_html = "".join(
-        f"""
-        <article class="item">
-          <div class="item-title"><h3>{peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
-          <p class="meta">{h(row['logged_at'])} · {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</p>
-          <p class="meta">{'protocol day ' + str(row['protocol_day']) if row['protocol_day'] else ''} {h(row['site'])}</p>
-          <p>{h(row['notes'])}</p>
-        </article>
-        """
+        log_edit_card(conn, row, colors, return_to) if row["id"] == edit_id else log_summary_card(row, colors, return_to)
         for row in logs
-    ) or '<div class="empty">No dose logs yet.</div>'
+    ) or '<div class="empty">No dose logs match this filter.</div>'
     body = f"""
     <section class="panel">
       <div class="panel-head"><h2>Manual dose</h2></div>
-      <form method="post" action="/log/manual" class="stack">
-        {logged_at_picker()}
-        <div class="grid three">
-          <label>Peptide
-            <select name="peptide_name">
-              {peptide_select(conn)}
-            </select>
-          </label>
-          <label>Dose mg <input name="actual_dose_amount" inputmode="decimal" required></label>
-          <label>Site <input name="site" placeholder="optional"></label>
-        </div>
-        {injection_site_picker()}
-        <label>Other peptide name <input name="peptide_name_other" placeholder="Only needed if not in the dropdown"></label>
-        <label>Notes <input name="notes" placeholder="optional"></label>
-        <div class="button-row"><button type="submit">Log manual dose</button></div>
-      </form>
+      {log_form(conn, return_to=return_to, button_label="Log manual dose")}
     </section>
     <section class="panel">
       <div class="panel-head"><h2>Dose history</h2></div>
+      <form method="get" action="/log" class="filter-bar">
+        <label>Filter by peptide
+          <select name="peptide">
+            {"".join(filter_options)}
+          </select>
+        </label>
+        <div class="button-row compact">
+          <button class="secondary" type="submit">Apply</button>
+          <a class="button secondary" href="/log">Clear</a>
+        </div>
+      </form>
       <div class="card-list">{log_html}</div>
     </section>
     """
     return layout(ctx, "/log", "Log", body)
+
+
+def log_summary_card(row: sqlite3.Row, colors: dict[str, str], return_to: str) -> str:
+    parsed = urllib.parse.urlparse(return_to)
+    params = urllib.parse.parse_qs(parsed.query)
+    edit_params = {"edit": row["id"]}
+    if params.get("peptide", [""])[0]:
+        edit_params["peptide"] = params["peptide"][0]
+    edit_href = f"/log?{urllib.parse.urlencode(edit_params)}"
+    return f"""
+    <article class="item">
+      <div class="item-title"><h3>{peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
+      <p class="meta">{h(row['logged_at'])} · {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</p>
+      <p class="meta">{'protocol day ' + str(row['protocol_day']) if row['protocol_day'] else ''} {h(row['site'])}</p>
+      <p>{h(row['notes'])}</p>
+      <div class="button-row compact">
+        <a class="button secondary" href="{h(edit_href)}">Edit</a>
+        <form class="inline-form" method="post" action="/logs/delete" onsubmit="return confirm('Delete this dose log?');">
+          <input type="hidden" name="log_id" value="{row['id']}">
+          <input type="hidden" name="return_to" value="{h(return_to)}">
+          <button class="danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </article>
+    """
+
+
+def log_edit_card(conn: sqlite3.Connection, row: sqlite3.Row, colors: dict[str, str], return_to: str) -> str:
+    return f"""
+    <article class="item edit-item">
+      <div class="item-title"><h3>Edit {peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
+      {log_form(conn, row, return_to=return_to, button_label="Save dose")}
+      <div class="button-row compact">
+        <a class="button secondary" href="{h(return_to)}">Cancel</a>
+        <form class="inline-form" method="post" action="/logs/delete" onsubmit="return confirm('Delete this dose log?');">
+          <input type="hidden" name="log_id" value="{row['id']}">
+          <input type="hidden" name="return_to" value="{h(return_to)}">
+          <button class="danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </article>
+    """
 
 
 def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[str, list[str]]) -> bytes:
@@ -1199,6 +1310,12 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
     next_month = add_months(month_start, 1)
     prev_month = add_months(month_start, -1)
     month_end = next_month - timedelta(days=1)
+    selected_date = date_from_param(params.get("date", [""])[0], date.today())
+    if selected_date < month_start or selected_date > month_end:
+        selected_date = month_start
+    selected_iso = selected_date.isoformat()
+    edit_id = int_or_default(params.get("edit", ["0"])[0], 0)
+    calendar_return = current_path("/calendar", params, {"edit"})
     rows = query(
         conn,
         """
@@ -1225,19 +1342,21 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
             day_rows = by_day.get(iso, [])
             outside = " outside" if day.month != month_start.month else ""
             today_class = " today" if iso == today_iso() else ""
+            selected_class = " selected" if iso == selected_iso else ""
+            day_href = f"/calendar?{urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': iso})}"
             chips = "".join(
                 f"""
-                <span class="calendar-dose" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
+                <a class="calendar-dose" href="{h(day_href)}" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
                   <span>{h(row['peptide_name'])}</span>
                   <strong>{row['dose_count']}</strong>
-                </span>
+                </a>
                 """
                 for row in day_rows
             )
             day_cells.append(
                 f"""
-                <div class="calendar-day{outside}{today_class}">
-                  <div class="calendar-date">{day.day}</div>
+                <div class="calendar-day{outside}{today_class}{selected_class}">
+                  <a class="calendar-date" href="{h(day_href)}">{day.day}</a>
                   <div class="calendar-doses">{chips}</div>
                 </div>
                 """
@@ -1246,7 +1365,23 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         peptide_chip(name, color)
         for name, color in sorted(seen_peptides.items(), key=lambda item: item[0].lower())
     ) or '<p class="meta">No doses logged this month.</p>'
+    selected_logs = query(
+        conn,
+        """
+        SELECT * FROM dose_logs
+        WHERE user_id = ? AND substr(logged_at, 1, 10) = ?
+        ORDER BY logged_at DESC, id DESC
+        """,
+        (ctx.user["id"], selected_iso),
+    )
+    selected_log_html = "".join(
+        calendar_log_edit_card(conn, row, colors, calendar_return, month_start, selected_iso)
+        if row["id"] == edit_id
+        else calendar_log_summary_card(row, colors, calendar_return, month_start, selected_iso)
+        for row in selected_logs
+    ) or '<div class="empty">No doses logged for this day.</div>'
     month_label = month_start.strftime("%B %Y")
+    selected_label = selected_date.strftime("%A, %B %-d, %Y") if sys.platform != "win32" else selected_date.strftime("%A, %B %#d, %Y")
     body = f"""
     <section class="panel">
       <div class="panel-head">
@@ -1263,8 +1398,52 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         {"".join(day_cells)}
       </div>
     </section>
+    <section class="panel">
+      <div class="panel-head"><h2>{h(selected_label)}</h2></div>
+      <h3>Add dose</h3>
+      {log_form(conn, return_to=f"/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}", default_logged_at=f"{selected_iso}T08:00", button_label="Add dose")}
+      <div class="divider"></div>
+      <div class="panel-head"><h2>Logged this day</h2></div>
+      <div class="card-list">{selected_log_html}</div>
+    </section>
     """
     return layout(ctx, "/calendar", "Calendar", body)
+
+
+def calendar_log_summary_card(row: sqlite3.Row, colors: dict[str, str], return_to: str, month_start: date, selected_iso: str) -> str:
+    edit_href = f"/calendar?{urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': selected_iso, 'edit': row['id']})}"
+    return f"""
+    <article class="item">
+      <div class="item-title"><h3>{peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
+      <p class="meta">{h(row['logged_at'])} · {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])} · {h(row['site'])}</p>
+      <p>{h(row['notes'])}</p>
+      <div class="button-row compact">
+        <a class="button secondary" href="{h(edit_href)}">Edit</a>
+        <form class="inline-form" method="post" action="/logs/delete" onsubmit="return confirm('Delete this dose log?');">
+          <input type="hidden" name="log_id" value="{row['id']}">
+          <input type="hidden" name="return_to" value="{h(return_to)}">
+          <button class="danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </article>
+    """
+
+
+def calendar_log_edit_card(conn: sqlite3.Connection, row: sqlite3.Row, colors: dict[str, str], return_to: str, month_start: date, selected_iso: str) -> str:
+    return f"""
+    <article class="item edit-item">
+      <div class="item-title"><h3>Edit {peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
+      {log_form(conn, row, return_to=return_to, button_label="Save dose")}
+      <div class="button-row compact">
+        <a class="button secondary" href="/calendar?{h(urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': selected_iso}))}">Cancel</a>
+        <form class="inline-form" method="post" action="/logs/delete" onsubmit="return confirm('Delete this dose log?');">
+          <input type="hidden" name="log_id" value="{row['id']}">
+          <input type="hidden" name="return_to" value="{h(return_to)}">
+          <button class="danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </article>
+    """
 
 
 def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
@@ -1423,7 +1602,7 @@ class App(BaseHTTPRequestHandler):
             if parsed.path == "/protocols":
                 return self.html(render_protocols(ctx, conn, params))
             if parsed.path == "/log":
-                return self.html(render_log(ctx, conn))
+                return self.html(render_log(ctx, conn, params))
             if parsed.path == "/calendar":
                 return self.html(render_calendar(ctx, conn, params))
             if parsed.path == "/admin":
@@ -1453,8 +1632,14 @@ class App(BaseHTTPRequestHandler):
             if parsed.path == "/log/protocol":
                 self.log_protocol(conn, ctx.user["id"], data)
                 return self.redirect(with_flash("/", "Dose logged"))
+            if parsed.path == "/logs/save":
+                self.save_dose_log(conn, ctx.user["id"], data)
+                return self.redirect(with_flash(safe_return_to(data.get("return_to")), "Dose saved"))
+            if parsed.path == "/logs/delete":
+                self.delete_dose_log(conn, ctx.user["id"], data)
+                return self.redirect(with_flash(safe_return_to(data.get("return_to")), "Dose deleted"))
             if parsed.path == "/log/manual":
-                self.log_manual(conn, ctx.user["id"], data)
+                self.save_dose_log(conn, ctx.user["id"], data)
                 return self.redirect(with_flash("/log", "Manual dose logged"))
             if parsed.path == "/protocols/save":
                 self.require_admin(ctx)
@@ -1629,10 +1814,31 @@ class App(BaseHTTPRequestHandler):
             ),
         )
 
-    def log_manual(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+    def save_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
         peptide_name = peptide_name_from_form(data)
         if not peptide_name:
             raise ValueError("Choose or enter a peptide name.")
+        logged_at = submitted_datetime_or_now(data.get("logged_at"))
+        log_id = int(data.get("log_id") or 0)
+        values = (
+            peptide_name,
+            float(data["actual_dose_amount"]),
+            data.get("site", "").strip(),
+            data.get("notes", "").strip(),
+            logged_at,
+        )
+        if log_id:
+            cursor = conn.execute(
+                """
+                UPDATE dose_logs
+                SET peptide_name = ?, actual_dose_amount = ?, site = ?, notes = ?, logged_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                (*values, log_id, user_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Dose log not found.")
+            return
         conn.execute(
             """
             INSERT INTO dose_logs
@@ -1645,9 +1851,20 @@ class App(BaseHTTPRequestHandler):
                 float(data["actual_dose_amount"]),
                 data.get("site", "").strip(),
                 data.get("notes", "").strip(),
-                submitted_datetime_or_now(data.get("logged_at")),
+                logged_at,
             ),
         )
+
+    def delete_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+        log_id = int(data.get("log_id") or 0)
+        if not log_id:
+            raise ValueError("Dose log not found.")
+        cursor = conn.execute("DELETE FROM dose_logs WHERE id = ? AND user_id = ?", (log_id, user_id))
+        if cursor.rowcount != 1:
+            raise ValueError("Dose log not found.")
+
+    def log_manual(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+        self.save_dose_log(conn, user_id, data)
 
     def save_protocol(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> int:
         protocol_id = int(data.get("protocol_id") or 0)
