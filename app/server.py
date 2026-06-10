@@ -407,14 +407,14 @@ def peptide_select(conn: sqlite3.Connection, selected: str = "", include_other: 
 
 def injection_site_picker() -> str:
     sites = [
-        "Abdomen left",
-        "Abdomen right",
-        "Thigh left",
-        "Thigh right",
-        "Upper arm left",
-        "Upper arm right",
-        "Glute left",
-        "Glute right",
+        "Left belly",
+        "Right belly",
+        "Left thigh",
+        "Right thigh",
+        "Left arm",
+        "Right arm",
+        "Left glute",
+        "Right glute",
     ]
     buttons = "".join(
         f'<button class="site-button" type="button" data-site="{h(site)}" aria-pressed="false">{h(site)}</button>'
@@ -424,6 +424,7 @@ def injection_site_picker() -> str:
     <div class="site-picker">
       <div class="site-figure">
         <img src="/static/body-sites.svg" alt="Body diagram with common injection regions">
+        <span>Quick site</span>
       </div>
       <div class="site-options" aria-label="Injection site choices">
         {buttons}

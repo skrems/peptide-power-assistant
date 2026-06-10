@@ -105,7 +105,7 @@ def main() -> int:
         require(today, "1 mg")
         require(today, "Log completed")
         require(today, "/static/body-sites.svg")
-        require(today, "Abdomen left")
+        require(today, "Left belly")
 
         client.post(
             "/log/protocol",
@@ -126,7 +126,7 @@ def main() -> int:
         require(log, "<select name=\"peptide_name\">")
         require(log, "SS-31")
         require(log, "/static/body-sites.svg")
-        require(log, "Thigh right")
+        require(log, "Right thigh")
         client.post(
             "/log/manual",
             {
