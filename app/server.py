@@ -75,6 +75,17 @@ def h(value: Any) -> str:
     return escape("" if value is None else str(value), quote=True)
 
 
+WEEKDAYS = [
+    ("mon", "Mon"),
+    ("tue", "Tue"),
+    ("wed", "Wed"),
+    ("thu", "Thu"),
+    ("fri", "Fri"),
+    ("sat", "Sat"),
+    ("sun", "Sun"),
+]
+
+
 def password_hash(password: str) -> str:
     salt = secrets.token_hex(16)
     iterations = 260_000
@@ -132,7 +143,9 @@ def init_db() -> None:
               end_day INTEGER NOT NULL,
               dose_amount REAL NOT NULL,
               dose_unit TEXT NOT NULL DEFAULT 'mg',
-              cadence_type TEXT NOT NULL CHECK (cadence_type IN ('daily', 'rest')),
+              cadence_type TEXT NOT NULL CHECK (cadence_type IN ('daily', 'every_n_days', 'weekdays', 'rest')),
+              interval_days INTEGER NOT NULL DEFAULT 1,
+              weekdays TEXT NOT NULL DEFAULT '',
               instructions TEXT
             );
 
@@ -181,9 +194,76 @@ def init_db() -> None:
             );
             """
         )
+        migrate_protocol_steps(conn)
         seed_admin(conn)
         seed_peptides(conn)
         seed_ghk_protocol(conn)
+
+
+def migrate_protocol_steps(conn: sqlite3.Connection) -> None:
+    table = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'protocol_steps'",
+    ).fetchone()
+    if not table:
+        return
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(protocol_steps)").fetchall()}
+    table_sql = table["sql"] or ""
+    needs_rebuild = (
+        "interval_days" not in columns
+        or "weekdays" not in columns
+        or "every_n_days" not in table_sql
+        or "weekdays" not in table_sql
+    )
+    if not needs_rebuild:
+        return
+
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("ALTER TABLE protocol_steps RENAME TO protocol_steps_old")
+    conn.execute(
+        """
+        CREATE TABLE protocol_steps (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          protocol_id INTEGER NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+          sort_order INTEGER NOT NULL,
+          start_day INTEGER NOT NULL,
+          end_day INTEGER NOT NULL,
+          dose_amount REAL NOT NULL,
+          dose_unit TEXT NOT NULL DEFAULT 'mg',
+          cadence_type TEXT NOT NULL CHECK (cadence_type IN ('daily', 'every_n_days', 'weekdays', 'rest')),
+          interval_days INTEGER NOT NULL DEFAULT 1,
+          weekdays TEXT NOT NULL DEFAULT '',
+          instructions TEXT
+        )
+        """
+    )
+    old_columns = {row["name"] for row in conn.execute("PRAGMA table_info(protocol_steps_old)").fetchall()}
+    interval_expr = "interval_days" if "interval_days" in old_columns else "1"
+    weekdays_expr = "weekdays" if "weekdays" in old_columns else "''"
+    conn.execute(
+        f"""
+        INSERT INTO protocol_steps
+          (id, protocol_id, sort_order, start_day, end_day, dose_amount, dose_unit,
+           cadence_type, interval_days, weekdays, instructions)
+        SELECT
+          id,
+          protocol_id,
+          sort_order,
+          start_day,
+          end_day,
+          dose_amount,
+          dose_unit,
+          CASE
+            WHEN cadence_type IN ('daily', 'every_n_days', 'weekdays', 'rest') THEN cadence_type
+            ELSE 'daily'
+          END,
+          COALESCE({interval_expr}, 1),
+          COALESCE({weekdays_expr}, ''),
+          instructions
+        FROM protocol_steps_old
+        """
+    )
+    conn.execute("DROP TABLE protocol_steps_old")
+    conn.execute("PRAGMA foreign_keys = ON")
 
 
 def seed_admin(conn: sqlite3.Connection) -> None:
@@ -414,6 +494,119 @@ def format_dose(amount: Any) -> str:
     return f"{value:g}"
 
 
+def int_or_default(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_weekdays(raw: str | None) -> str:
+    if not raw:
+        return ""
+    aliases = {code: code for code, _label in WEEKDAYS}
+    aliases.update(
+        {
+            "monday": "mon",
+            "tuesday": "tue",
+            "wednesday": "wed",
+            "thursday": "thu",
+            "friday": "fri",
+            "saturday": "sat",
+            "sunday": "sun",
+        }
+    )
+    selected: list[str] = []
+    for part in raw.replace(";", ",").split(","):
+        key = part.strip().lower()
+        if not key:
+            continue
+        key = aliases.get(key, aliases.get(key[:3], ""))
+        if key and key not in selected:
+            selected.append(key)
+    allowed = [code for code, _label in WEEKDAYS]
+    return ",".join(code for code in allowed if code in selected)
+
+
+def weekday_label_list(raw: str | None) -> str:
+    selected = set(normalize_weekdays(raw).split(",")) if raw else set()
+    labels = [label for code, label in WEEKDAYS if code in selected]
+    return ", ".join(labels)
+
+
+def cadence_label(step: sqlite3.Row) -> str:
+    cadence = step["cadence_type"]
+    if cadence == "rest" or float(step["dose_amount"]) <= 0:
+        return "Rest"
+    if cadence == "every_n_days":
+        interval = max(1, int_or_default(step["interval_days"], 1))
+        return f"Every {interval} day{'s' if interval != 1 else ''}"
+    if cadence == "weekdays":
+        labels = weekday_label_list(step["weekdays"])
+        return labels or "Selected weekdays"
+    return "Daily"
+
+
+def cadence_select(selected: str = "daily") -> str:
+    options = [
+        ("daily", "Daily"),
+        ("every_n_days", "Every N days"),
+        ("weekdays", "Selected weekdays"),
+        ("rest", "Rest"),
+    ]
+    return "\n".join(
+        f'<option value="{value}" {"selected" if value == selected else ""}>{label}</option>'
+        for value, label in options
+    )
+
+
+def weekday_checkboxes(selected_raw: str | None = "") -> str:
+    selected = set(normalize_weekdays(selected_raw).split(",")) if selected_raw else set()
+    return "".join(
+        f"""
+        <label class="checkbox-chip">
+          <input type="checkbox" name="weekdays" value="{code}" {"checked" if code in selected else ""}>
+          {label}
+        </label>
+        """
+        for code, label in WEEKDAYS
+    )
+
+
+def step_is_due_on(step: sqlite3.Row, protocol_day_value: int, iso_date: str) -> bool:
+    cadence = step["cadence_type"]
+    if cadence == "rest" or float(step["dose_amount"]) <= 0:
+        return True
+    if cadence == "daily":
+        return True
+    if cadence == "every_n_days":
+        interval = max(1, int_or_default(step["interval_days"], 1))
+        return (protocol_day_value - int(step["start_day"])) % interval == 0
+    if cadence == "weekdays":
+        selected = set(normalize_weekdays(step["weekdays"]).split(","))
+        weekday_code = WEEKDAYS[date.fromisoformat(iso_date).weekday()][0]
+        return weekday_code in selected
+    return True
+
+
+def step_cadence_fields(selected: str = "daily", interval_days: Any = 1, weekdays: str | None = "") -> str:
+    return f"""
+    <div class="step-cadence-grid">
+      <label>Cadence
+        <select name="cadence_type">
+          {cadence_select(selected)}
+        </select>
+      </label>
+      <label>Every N days <input name="interval_days" inputmode="numeric" value="{max(1, int_or_default(interval_days, 1))}"></label>
+      <label class="weekday-field">Weekdays
+        <div class="checkbox-grid">
+          {weekday_checkboxes(weekdays)}
+        </div>
+      </label>
+    </div>
+    """
+
+
 def peptide_name_from_form(data: dict[str, str]) -> str:
     custom = data.get("peptide_name_other", "").strip()
     selected = data.get("peptide_name", "").strip()
@@ -481,6 +674,7 @@ def with_flash(path: str, message: str) -> str:
 
 def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:
     tasks: list[dict[str, Any]] = []
+    current_date = today_iso()
     enrollments = query(
         conn,
         """
@@ -493,7 +687,7 @@ def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
         (user_id,),
     )
     for enrollment in enrollments:
-        day = protocol_day(enrollment["start_date"])
+        day = protocol_day(enrollment["start_date"], current_date)
         step = one(
             conn,
             """
@@ -504,6 +698,8 @@ def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
             """,
             (enrollment["protocol_id"], day, day),
         )
+        if step and not step_is_due_on(step, day, current_date):
+            continue
         log = one(
             conn,
             """
@@ -566,7 +762,7 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
                 </div>
                 <span class="badge {badge}">{badge_text}</span>
               </div>
-              <p>{format_dose(step['dose_amount'])} {h(step['dose_unit'])} · days {step['start_day']}-{step['end_day']}</p>
+              <p>{format_dose(step['dose_amount'])} {h(step['dose_unit'])} · {h(cadence_label(step))} · days {step['start_day']}-{step['end_day']}</p>
               <p class="meta">{h(step['instructions'])}</p>
               {action}
             </article>
@@ -679,7 +875,7 @@ def render_protocols(ctx: RequestContext, conn: sqlite3.Connection, params: dict
     for protocol in protocols:
         protocol_steps = step_map.get(protocol["id"], [])
         step_text = "<br>".join(
-            f"Days {step['start_day']}-{step['end_day']}: {format_dose(step['dose_amount'])} {h(step['dose_unit'])} {h(step['cadence_type'])}"
+            f"Days {step['start_day']}-{step['end_day']}: {format_dose(step['dose_amount'])} {h(step['dose_unit'])} · {h(cadence_label(step))}"
             for step in protocol_steps
         )
         actions = []
@@ -824,6 +1020,7 @@ def protocol_editor(conn: sqlite3.Connection, protocol: sqlite3.Row | None) -> s
           <label>End day <input name="end_day" inputmode="numeric" value="15" required></label>
           <label>Dose mg <input name="dose_amount" inputmode="decimal" value="1" required></label>
         </div>
+        {step_cadence_fields("daily", 7, "")}
         <label>Instructions <input name="instructions" placeholder="Phase 1"></label>
         <div class="button-row">
           <button type="submit" {'disabled' if not protocol else ''}>Add step</button>
@@ -850,6 +1047,7 @@ def step_list(protocol_id: int) -> str:
               <label>End <input name="end_day" value="{step['end_day']}" required></label>
               <label>Dose mg <input name="dose_amount" value="{format_dose(step['dose_amount'])}" required></label>
             </div>
+            {step_cadence_fields(step['cadence_type'], step['interval_days'], step['weekdays'])}
             <label>Instructions <input name="instructions" value="{h(step['instructions'])}"></label>
             <div class="button-row">
               <button class="secondary" type="submit">Save step</button>
@@ -1168,7 +1366,7 @@ class App(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(min(length, 1024 * 1024)).decode("utf-8")
         parsed = urllib.parse.parse_qs(raw, keep_blank_values=True)
-        return {key: values[-1] for key, values in parsed.items()}
+        return {key: ",".join(values) if len(values) > 1 else values[-1] for key, values in parsed.items()}
 
     def login(self, data: dict[str, str]) -> None:
         email = data.get("email", "").strip().lower()
@@ -1311,26 +1509,36 @@ class App(BaseHTTPRequestHandler):
         start_day = int(data["start_day"])
         end_day = int(data["end_day"])
         dose_amount = float(data["dose_amount"])
-        cadence_type = "rest" if dose_amount <= 0 else "daily"
+        cadence_type = data.get("cadence_type", "daily").strip()
+        if cadence_type not in {"daily", "every_n_days", "weekdays", "rest"}:
+            cadence_type = "daily"
+        if dose_amount <= 0:
+            cadence_type = "rest"
+        interval_days = max(1, int_or_default(data.get("interval_days"), 1))
+        weekdays = normalize_weekdays(data.get("weekdays"))
+        if cadence_type == "weekdays" and not weekdays:
+            raise ValueError("Choose at least one weekday.")
         instructions = data.get("instructions", "").strip()
         if step_id:
             conn.execute(
                 """
                 UPDATE protocol_steps
-                SET start_day = ?, end_day = ?, dose_amount = ?, cadence_type = ?, instructions = ?
+                SET start_day = ?, end_day = ?, dose_amount = ?, cadence_type = ?,
+                    interval_days = ?, weekdays = ?, instructions = ?
                 WHERE id = ?
                 """,
-                (start_day, end_day, dose_amount, cadence_type, instructions, step_id),
+                (start_day, end_day, dose_amount, cadence_type, interval_days, weekdays, instructions, step_id),
             )
             return protocol_id
         count = one(conn, "SELECT count(*) c FROM protocol_steps WHERE protocol_id = ?", (protocol_id,))["c"]
         conn.execute(
             """
             INSERT INTO protocol_steps
-              (protocol_id, sort_order, start_day, end_day, dose_amount, dose_unit, cadence_type, instructions)
-            VALUES (?, ?, ?, ?, ?, 'mg', ?, ?)
+              (protocol_id, sort_order, start_day, end_day, dose_amount, dose_unit,
+               cadence_type, interval_days, weekdays, instructions)
+            VALUES (?, ?, ?, ?, ?, 'mg', ?, ?, ?, ?)
             """,
-            (protocol_id, count + 1, start_day, end_day, dose_amount, cadence_type, instructions),
+            (protocol_id, count + 1, start_day, end_day, dose_amount, cadence_type, interval_days, weekdays, instructions),
         )
         return protocol_id
 

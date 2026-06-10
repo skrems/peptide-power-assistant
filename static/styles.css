@@ -387,6 +387,48 @@ button.text {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
+.step-cadence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(120px, .8fr);
+  gap: 12px;
+}
+
+.weekday-field {
+  grid-column: 1 / -1;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.checkbox-chip {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.checkbox-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkbox-chip:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .site-picker {
   grid-column: 1 / -1;
   display: grid;
@@ -473,6 +515,14 @@ button.text {
 
   .datetime-picker {
     grid-template-columns: 1fr;
+  }
+
+  .step-cadence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .checkbox-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .site-picker {

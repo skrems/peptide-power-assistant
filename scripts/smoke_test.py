@@ -93,11 +93,65 @@ def main() -> int:
         protocols = client.get("/protocols")
         require(protocols, "GHK-Cu 60-day ramp")
         require(protocols, "<select name=\"peptide_name\">")
-        require(protocols, "Days 1-15: 1 mg daily")
-        require(protocols, "Days 16-30: 2 mg daily")
-        require(protocols, "Days 31-60: 0 mg rest")
+        require(protocols, "Days 1-15: 1 mg · Daily")
+        require(protocols, "Days 16-30: 2 mg · Daily")
+        require(protocols, "Days 31-60: 0 mg · Rest")
+        require(protocols, "Every N days")
+        require(protocols, "Selected weekdays")
         require(protocols, "Edit")
         require(protocols, "Delete")
+
+        client.post(
+            "/protocols/save",
+            {
+                "protocol_id": "",
+                "name": "Retatrutide weekly",
+                "peptide_name": "Retatrutide",
+                "peptide_name_other": "",
+                "description": "Every 7 days.",
+            },
+        )
+        client.post(
+            "/steps/save",
+            {
+                "protocol_id": "2",
+                "start_day": "1",
+                "end_day": "84",
+                "dose_amount": "2",
+                "cadence_type": "every_n_days",
+                "interval_days": "7",
+                "weekdays": "",
+                "instructions": "Weekly dose",
+            },
+        )
+        client.post(
+            "/protocols/save",
+            {
+                "protocol_id": "",
+                "name": "MOTS-c MWF",
+                "peptide_name": "",
+                "peptide_name_other": "MOTS-c",
+                "description": "Monday, Wednesday, Friday.",
+            },
+        )
+        client.post(
+            "/steps/save",
+            {
+                "protocol_id": "3",
+                "start_day": "1",
+                "end_day": "42",
+                "dose_amount": "5",
+                "cadence_type": "weekdays",
+                "interval_days": "1",
+                "weekdays": "mon,wed,fri",
+                "instructions": "MWF dose",
+            },
+        )
+        protocols = client.get("/protocols")
+        require(protocols, "Retatrutide weekly")
+        require(protocols, "Days 1-84: 2 mg · Every 7 days")
+        require(protocols, "MOTS-c MWF")
+        require(protocols, "Days 1-42: 5 mg · Mon, Wed, Fri")
 
         client.post("/protocols/activate", {"protocol_id": "1"})
         today = client.get("/")
