@@ -177,7 +177,7 @@ It pins the app to Pacific time so calendar days match local use even if the Zim
 ```yaml
 services:
   peptide-power-assistant:
-    build: .
+    image: ghcr.io/skrems/peptide-power-assistant:latest
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
@@ -193,11 +193,19 @@ services:
       - /DATA/AppData/peptide-power-assistant/data:/data
 ```
 
-ZimaOS has a read-only `/root` for this Docker CLI path, so commands use a writable Docker config directory:
+The image is published by GitHub Actions to:
+
+```text
+ghcr.io/skrems/peptide-power-assistant:latest
+```
+
+After the first publish, GitHub may mark the package private. If Zimaboard cannot pull it, open the package settings in GitHub and set the package visibility to public.
+
+ZimaOS has a read-only `/root` for this Docker CLI path, so CLI commands use a writable Docker config directory:
 
 ```bash
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
-  docker compose -f docker-compose.zima.yml up -d --build
+  docker compose -f docker-compose.zima.yml up -d
 ```
 
 Check container status:
@@ -235,28 +243,32 @@ git diff --check
 
 2. Commit and push as usual.
 
-3. Copy source to the Zimaboard:
+3. GitHub Actions publishes a new image:
 
-```bash
-rsync -av --delete \
-  --exclude data \
-  --exclude .git \
-  --exclude __pycache__ \
-  --exclude '*.pyc' \
-  /Users/skrems/Projects/peptide-power-assistant/ \
-  admin@zimaboard:/DATA/AppData/peptide-power-assistant/source/
+```text
+ghcr.io/skrems/peptide-power-assistant:latest
 ```
 
-4. Rebuild and restart on the Zimaboard:
+4. Copy the latest compose file to Zimaboard only if it changed:
+
+```bash
+rsync -av \
+  /Users/skrems/Projects/peptide-power-assistant/docker-compose.zima.yml \
+  admin@zimaboard:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
+```
+
+5. Pull and restart on the Zimaboard:
 
 ```bash
 ssh admin@zimaboard
 cd /DATA/AppData/peptide-power-assistant/source
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
-  docker compose -f docker-compose.zima.yml up -d --build
+  docker compose -f docker-compose.zima.yml pull
+sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
+  docker compose -f docker-compose.zima.yml up -d
 ```
 
-5. Verify:
+6. Verify:
 
 ```bash
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \

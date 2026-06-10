@@ -1,6 +1,6 @@
 services:
   peptide-power-assistant:
-    build: .
+    image: ghcr.io/skrems/peptide-power-assistant:latest
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
