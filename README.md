@@ -1,6 +1,6 @@
 # Peptide Power Assistant
 
-Self-hosted protocol and dose tracker for a Zimaboard or similar local server.
+Self-hosted protocol and dose tracker for a Zimaboard or similar local server. This is for entertaiment purposes only and is not intended as any type of medical application. This a proof of concept build as education and entertainment. 
 
 ## MVP Features
 
