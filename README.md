@@ -166,13 +166,13 @@ ssh admin@zimaboard 'sudo mkdir -p /DATA/AppData/peptide-power-assistant/data &&
 
 ### Compose File On Zimaboard
 
-On the Zimaboard, the deployment uses this file:
+The repo includes this Zimaboard-specific compose file:
 
 ```text
 /DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
 ```
 
-Contents:
+It pins the app to Pacific time so calendar days match local use even if the Zimaboard host timezone differs:
 
 ```yaml
 services:
@@ -186,6 +186,8 @@ services:
       PEPTIDE_HOST: "0.0.0.0"
       PEPTIDE_PORT: "8080"
       PEPTIDE_DB: "/data/app.db"
+      PEPTIDE_TIMEZONE: "America/Los_Angeles"
+      TZ: "America/Los_Angeles"
       PEPTIDE_SECRET: "replace-this-with-a-long-random-secret"
     volumes:
       - /DATA/AppData/peptide-power-assistant/data:/data

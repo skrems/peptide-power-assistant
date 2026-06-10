@@ -5,6 +5,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PEPTIDE_HOST=0.0.0.0
 ENV PEPTIDE_PORT=8080
 ENV PEPTIDE_DB=/data/app.db
+ENV PEPTIDE_TIMEZONE=America/Los_Angeles
 
 WORKDIR /app
 COPY app ./app
@@ -14,4 +15,3 @@ EXPOSE 8080
 VOLUME ["/data"]
 
 CMD ["python", "-m", "app.server"]
-

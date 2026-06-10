@@ -17,6 +17,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
@@ -28,8 +29,16 @@ PORT = int(os.environ.get("PEPTIDE_PORT", "8080"))
 SECRET = os.environ.get("PEPTIDE_SECRET", secrets.token_hex(32))
 ADMIN_EMAIL = os.environ.get("PEPTIDE_ADMIN_EMAIL", "admin@example.local").strip().lower()
 ADMIN_PASSWORD = os.environ.get("PEPTIDE_ADMIN_PASSWORD", "change-me-now")
+APP_TIMEZONE_NAME = os.environ.get("PEPTIDE_TIMEZONE", os.environ.get("TZ", "America/Los_Angeles"))
 
 SESSIONS: dict[str, int] = {}
+
+
+def app_timezone() -> ZoneInfo:
+    try:
+        return ZoneInfo(APP_TIMEZONE_NAME)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("America/Los_Angeles")
 
 
 @dataclass
@@ -48,11 +57,11 @@ def db() -> sqlite3.Connection:
 
 
 def now_iso() -> str:
-    return datetime.now().replace(microsecond=0).isoformat()
+    return datetime.now(app_timezone()).replace(tzinfo=None, microsecond=0).isoformat()
 
 
 def now_datetime_local() -> str:
-    return datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
+    return datetime.now(app_timezone()).replace(tzinfo=None, second=0, microsecond=0).isoformat(timespec="minutes")
 
 
 def submitted_datetime_or_now(value: str | None) -> str:
@@ -69,7 +78,11 @@ def submitted_datetime_or_now(value: str | None) -> str:
 
 
 def today_iso() -> str:
-    return date.today().isoformat()
+    return datetime.now(app_timezone()).date().isoformat()
+
+
+def today_date() -> date:
+    return datetime.now(app_timezone()).date()
 
 
 def h(value: Any) -> str:
@@ -570,7 +583,7 @@ def month_from_params(params: dict[str, list[str]]) -> date:
             return date(parsed.year, parsed.month, 1)
         except ValueError:
             pass
-    today = date.today()
+    today = today_date()
     return date(today.year, today.month, 1)
 
 
@@ -934,7 +947,7 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     <section class="panel">
       <div class="panel-head">
         <div><p class="eyebrow">At a glance</p><h2>Due today</h2></div>
-        <span class="badge">{date.today().strftime('%b %-d, %Y') if sys.platform != 'win32' else date.today().strftime('%b %#d, %Y')}</span>
+        <span class="badge">{today_date().strftime('%b %-d, %Y') if sys.platform != 'win32' else today_date().strftime('%b %#d, %Y')}</span>
       </div>
       <div class="card-list">{task_html}</div>
     </section>
@@ -1310,7 +1323,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
     next_month = add_months(month_start, 1)
     prev_month = add_months(month_start, -1)
     month_end = next_month - timedelta(days=1)
-    selected_date = date_from_param(params.get("date", [""])[0], date.today())
+    selected_date = date_from_param(params.get("date", [""])[0], today_date())
     if selected_date < month_start or selected_date > month_end:
         selected_date = month_start
     selected_iso = selected_date.isoformat()
@@ -1388,7 +1401,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         <div><p class="eyebrow">Dose calendar</p><h2>{h(month_label)}</h2></div>
         <div class="button-row compact">
           <a class="button secondary" href="/calendar?month={prev_month.strftime('%Y-%m')}">Previous</a>
-          <a class="button secondary" href="/calendar?month={date.today().strftime('%Y-%m')}">Today</a>
+          <a class="button secondary" href="/calendar?month={today_date().strftime('%Y-%m')}">Today</a>
           <a class="button secondary" href="/calendar?month={next_month.strftime('%Y-%m')}">Next</a>
         </div>
       </div>
