@@ -50,6 +50,23 @@ def now_iso() -> str:
     return datetime.now().replace(microsecond=0).isoformat()
 
 
+def now_datetime_local() -> str:
+    return datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
+
+
+def submitted_datetime_or_now(value: str | None) -> str:
+    if not value:
+        return now_iso()
+    value = value.strip()
+    if not value:
+        return now_iso()
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Enter a valid dose date and time.") from exc
+    return parsed.replace(microsecond=0).isoformat()
+
+
 def today_iso() -> str:
     return date.today().isoformat()
 
@@ -333,6 +350,18 @@ def layout(ctx: RequestContext, active: str, title: str, body: str) -> bytes:
             candidate.setAttribute("aria-pressed", selected ? "true" : "false");
           }});
         }});
+        document.addEventListener("click", (event) => {{
+          const button = event.target.closest(".time-button");
+          if (!button) return;
+          const form = button.closest("form");
+          const input = form && form.querySelector('input[name="logged_at"]');
+          if (!input) return;
+          const datePart = (input.value || new Date().toISOString().slice(0, 16)).slice(0, 10);
+          input.value = `${{datePart}}T${{button.dataset.time || "08:00"}}`;
+          form.querySelectorAll(".time-button").forEach((candidate) => {{
+            candidate.classList.toggle("selected", candidate === button);
+          }});
+        }});
       </script>
     </body>
     </html>"""
@@ -426,6 +455,20 @@ def injection_site_picker() -> str:
       </div>
       <div class="site-options" aria-label="Injection site choices">
         {buttons}
+      </div>
+    </div>
+    """
+
+
+def logged_at_picker() -> str:
+    return f"""
+    <div class="datetime-picker">
+      <label>Dose date and time
+        <input name="logged_at" type="datetime-local" value="{now_datetime_local()}" required>
+      </label>
+      <div class="time-shortcuts" aria-label="Quick time choices">
+        <button class="time-button" type="button" data-time="08:00">Morning</button>
+        <button class="time-button" type="button" data-time="20:00">Night</button>
       </div>
     </div>
     """
@@ -845,6 +888,7 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     <section class="panel">
       <div class="panel-head"><h2>Manual dose</h2></div>
       <form method="post" action="/log/manual" class="stack">
+        {logged_at_picker()}
         <div class="grid three">
           <label>Peptide
             <select name="peptide_name">
@@ -1230,7 +1274,7 @@ class App(BaseHTTPRequestHandler):
                 float(data["actual_dose_amount"]),
                 data.get("site", "").strip(),
                 data.get("notes", "").strip(),
-                now_iso(),
+                submitted_datetime_or_now(data.get("logged_at")),
             ),
         )
 

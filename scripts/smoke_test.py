@@ -124,6 +124,9 @@ def main() -> int:
 
         log = client.get("/log")
         require(log, "<select name=\"peptide_name\">")
+        require(log, 'name="logged_at" type="datetime-local"')
+        require(log, "Morning")
+        require(log, "Night")
         require(log, "SS-31")
         require(log, "/static/body-map.svg")
         require(log, "Right Thigh")
@@ -132,6 +135,7 @@ def main() -> int:
             {
                 "peptide_name": "SS-31",
                 "peptide_name_other": "",
+                "logged_at": "2026-05-03T20:00",
                 "actual_dose_amount": "5",
                 "site": "arm",
                 "notes": "manual smoke",
@@ -141,6 +145,7 @@ def main() -> int:
         require(log, "Dose history")
         require(log, "GHK-Cu")
         require(log, "abdomen")
+        require(log, "2026-05-03T20:00:00")
         require(log, "manual smoke")
 
         admin = client.get("/admin")
