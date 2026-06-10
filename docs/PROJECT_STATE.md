@@ -9,7 +9,7 @@ Peptide Power Assistant is a self-hosted Python/SQLite web app for dose logging,
 ## Repository
 
 ```text
-/Users/skrems/Projects/peptide-power-assistant
+<local-repo-path>
 git@github.com:skrems/peptide-power-assistant.git
 ```
 
@@ -26,7 +26,7 @@ The GHCR package is public so Zimaboard can pull without `docker login`.
 Run locally:
 
 ```bash
-cd /Users/skrems/Projects/peptide-power-assistant
+cd <local-repo-path>
 python3 -m app.server
 ```
 
@@ -49,13 +49,13 @@ git diff --check
 Zimaboard SSH alias:
 
 ```text
-admin@zimaboard
+<zimaboard-user>@<zimaboard-host>
 ```
 
 Zimaboard IP/browser URL:
 
 ```text
-http://192.168.68.199:8080
+http://<zimaboard-ip>:8080
 ```
 
 Important paths:
@@ -113,14 +113,14 @@ sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
 
 ```bash
 rsync -av \
-  /Users/skrems/Projects/peptide-power-assistant/docker-compose.zima.yml \
-  admin@zimaboard:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
+  <local-repo-path>/docker-compose.zima.yml \
+  <zimaboard-user>@<zimaboard-host>:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
 ```
 
 5. Pull and restart on Zimaboard:
 
 ```bash
-ssh admin@zimaboard
+ssh <zimaboard-user>@<zimaboard-host>
 cd /DATA/AppData/peptide-power-assistant/source
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
   docker compose -f docker-compose.zima.yml pull
@@ -141,7 +141,7 @@ The container image does not include local DB files, user records, logs, or pass
 Backup before larger updates:
 
 ```bash
-ssh admin@zimaboard 'cp /DATA/AppData/peptide-power-assistant/data/app.db /DATA/AppData/peptide-power-assistant/data/app-backup-$(date +%Y%m%d-%H%M%S).db'
+ssh <zimaboard-user>@<zimaboard-host> 'cp /DATA/AppData/peptide-power-assistant/data/app.db /DATA/AppData/peptide-power-assistant/data/app-backup-$(date +%Y%m%d-%H%M%S).db'
 ```
 
 ## Current Features
@@ -163,4 +163,4 @@ ssh admin@zimaboard 'cp /DATA/AppData/peptide-power-assistant/data/app.db /DATA/
 
 - The app timezone is explicit: `America/Los_Angeles`.
 - Zimaboard host time was previously off from Pacific; app-level timezone now protects calendar/today calculations.
-- Browsers do not use the SSH alias `zimaboard`; use `192.168.68.199` unless local DNS is configured.
+- Browsers do not use SSH aliases; use `<zimaboard-ip>` unless local DNS is configured.

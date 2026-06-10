@@ -105,22 +105,22 @@ make docker-down
 
 Current deployment model: GitHub Actions publishes a Docker image to GHCR, Zimaboard pulls that image, and SQLite data stays outside the container.
 
-Confirmed Zimaboard address:
+Zimaboard address:
 
 ```text
-192.168.68.199
+<zimaboard-ip>
 ```
 
 The SSH config on the MacBook has an alias, so SSH/SCP/rsync can use:
 
 ```text
-admin@zimaboard
+<zimaboard-user>@<zimaboard-host>
 ```
 
 Browsers do not read SSH aliases. Use the IP in Safari/Chrome:
 
 ```text
-http://192.168.68.199:8080
+http://<zimaboard-ip>:8080
 ```
 
 ### Zimaboard Paths
@@ -152,8 +152,8 @@ The GHCR package has been made public so Zimaboard can pull it without `docker l
 The database was copied separately to the Zimaboard data path. If it ever needs to be copied again from the MacBook:
 
 ```bash
-scp /Users/skrems/Projects/peptide-power-assistant/data/app.db admin@zimaboard:/tmp/app.db
-ssh admin@zimaboard 'sudo mkdir -p /DATA/AppData/peptide-power-assistant/data && sudo mv /tmp/app.db /DATA/AppData/peptide-power-assistant/data/app.db && sudo chown -R admin:samba /DATA/AppData/peptide-power-assistant'
+scp <local-repo-path>/data/app.db <zimaboard-user>@<zimaboard-host>:/tmp/app.db
+ssh <zimaboard-user>@<zimaboard-host> 'sudo mkdir -p /DATA/AppData/peptide-power-assistant/data && sudo mv /tmp/app.db /DATA/AppData/peptide-power-assistant/data/app.db && sudo chown -R <zimaboard-user>:<zimaboard-group> /DATA/AppData/peptide-power-assistant'
 ```
 
 ### Compose File On Zimaboard
@@ -168,8 +168,8 @@ Copy or update it from the MacBook with:
 
 ```bash
 rsync -av \
-  /Users/skrems/Projects/peptide-power-assistant/docker-compose.zima.yml \
-  admin@zimaboard:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
+  <local-repo-path>/docker-compose.zima.yml \
+  <zimaboard-user>@<zimaboard-host>:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
 ```
 
 It pins the app to Pacific time so calendar days match local use even if the Zimaboard host timezone differs:
@@ -217,7 +217,7 @@ sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
 Then open:
 
 ```text
-http://192.168.68.199:8080
+http://<zimaboard-ip>:8080
 ```
 
 ### Update Flow
@@ -227,7 +227,7 @@ After making app changes on the MacBook:
 1. Test locally:
 
 ```bash
-cd /Users/skrems/Projects/peptide-power-assistant
+cd <local-repo-path>
 python3 -m py_compile app/server.py scripts/smoke_test.py
 python3 scripts/smoke_test.py
 git diff --check
@@ -245,14 +245,14 @@ ghcr.io/skrems/peptide-power-assistant:latest
 
 ```bash
 rsync -av \
-  /Users/skrems/Projects/peptide-power-assistant/docker-compose.zima.yml \
-  admin@zimaboard:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
+  <local-repo-path>/docker-compose.zima.yml \
+  <zimaboard-user>@<zimaboard-host>:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
 ```
 
 5. Pull and restart on the Zimaboard:
 
 ```bash
-ssh admin@zimaboard
+ssh <zimaboard-user>@<zimaboard-host>
 cd /DATA/AppData/peptide-power-assistant/source
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
   docker compose -f docker-compose.zima.yml pull
@@ -278,7 +278,7 @@ Peptide Power Assistant running at http://0.0.0.0:8080
 Before larger updates, back up the Zimaboard database:
 
 ```bash
-ssh admin@zimaboard 'cp /DATA/AppData/peptide-power-assistant/data/app.db /DATA/AppData/peptide-power-assistant/data/app-backup-$(date +%Y%m%d-%H%M%S).db'
+ssh <zimaboard-user>@<zimaboard-host> 'cp /DATA/AppData/peptide-power-assistant/data/app.db /DATA/AppData/peptide-power-assistant/data/app-backup-$(date +%Y%m%d-%H%M%S).db'
 ```
 
 Container rebuilds should not erase app data because `/data` is mounted from:
@@ -292,7 +292,7 @@ Container rebuilds should not erase app data because `/data` is mounted from:
 Local MacBook SQLite database:
 
 ```text
-/Users/skrems/Projects/peptide-power-assistant/data/app.db
+<local-repo-path>/data/app.db
 ```
 
 Zimaboard SQLite database:
