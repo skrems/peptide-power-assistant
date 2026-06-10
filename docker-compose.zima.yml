@@ -1,3 +1,5 @@
+name: peptide-power-assistant
+
 services:
   peptide-power-assistant:
     image: ghcr.io/skrems/peptide-power-assistant:latest
@@ -14,3 +16,21 @@ services:
       PEPTIDE_SECRET: "replace-this-with-a-long-random-secret"
     volumes:
       - /DATA/AppData/peptide-power-assistant/data:/data
+
+x-casaos:
+  architectures:
+    - amd64
+  main: peptide-power-assistant
+  author: skrems
+  category: Utilities
+  description:
+    en_us: Local protocol and dose tracking for Peptide Power Assistant.
+  developer: skrems
+  icon: https://raw.githubusercontent.com/skrems/peptide-power-assistant/main/static/icon.svg
+  index: /
+  port_map: "8080"
+  scheme: http
+  tagline:
+    en_us: Track protocols, doses, and daily peptide usage.
+  title:
+    en_us: Peptide Power Assistant

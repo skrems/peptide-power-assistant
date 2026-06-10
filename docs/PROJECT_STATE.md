@@ -75,6 +75,7 @@ Compose file on Zimaboard:
 The compose file uses:
 
 ```yaml
+name: peptide-power-assistant
 image: ghcr.io/skrems/peptide-power-assistant:latest
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
@@ -82,6 +83,11 @@ environment:
   PEPTIDE_DB: /data/app.db
   PEPTIDE_TIMEZONE: America/Los_Angeles
   TZ: America/Los_Angeles
+x-casaos:
+  title:
+    en_us: Peptide Power Assistant
+  icon: https://raw.githubusercontent.com/skrems/peptide-power-assistant/main/static/icon.svg
+  port_map: "8080"
 ```
 
 ZimaOS needs a writable Docker config path because `/root/.docker` is read-only in this context:
@@ -103,6 +109,36 @@ sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
   docker logs peptide-power-assistant --tail 50
 ```
+
+## ZimaOS Dashboard Tile
+
+The dashboard previously showed an incomplete app tile named `source` because the app was first deployed by running Docker Compose from a directory named `source`. Docker created a `source` compose project and ZimaOS recorded that app id.
+
+The compose file now sets the project name and ZimaOS metadata explicitly:
+
+```yaml
+name: peptide-power-assistant
+x-casaos:
+  main: peptide-power-assistant
+  title:
+    en_us: Peptide Power Assistant
+  icon: https://raw.githubusercontent.com/skrems/peptide-power-assistant/main/static/icon.svg
+```
+
+One-time cleanup/recreate command:
+
+```bash
+ssh <zimaboard-user>@<zimaboard-host>
+cd /DATA/AppData/peptide-power-assistant/source
+sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
+  docker compose -p source -f docker-compose.zima.yml down
+sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
+  docker compose -f docker-compose.zima.yml pull
+sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
+  docker compose -f docker-compose.zima.yml up -d
+```
+
+If ZimaOS still keeps a stale `source` launcher after refresh, remove that tile in the UI and re-import `docker-compose.zima.yml` via **App Store > Custom Install > Import > Docker Compose** so the `x-casaos` metadata is used.
 
 ## Update Flow
 

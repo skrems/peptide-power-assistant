@@ -173,6 +173,8 @@ rsync -av \
 It pins the app to Pacific time so calendar days match local use even if the Zimaboard host timezone differs:
 
 ```yaml
+name: peptide-power-assistant
+
 services:
   peptide-power-assistant:
     image: ghcr.io/skrems/peptide-power-assistant:latest
@@ -189,6 +191,17 @@ services:
       PEPTIDE_SECRET: "replace-this-with-a-long-random-secret"
     volumes:
       - /DATA/AppData/peptide-power-assistant/data:/data
+
+x-casaos:
+  architectures:
+    - amd64
+  main: peptide-power-assistant
+  title:
+    en_us: Peptide Power Assistant
+  icon: https://raw.githubusercontent.com/skrems/peptide-power-assistant/main/static/icon.svg
+  port_map: "8080"
+  scheme: http
+  index: /
 ```
 
 ZimaOS has a read-only `/root` for this Docker CLI path, so CLI commands use a writable Docker config directory:
@@ -217,6 +230,36 @@ Then open:
 ```text
 http://<zimaboard-ip>:8080
 ```
+
+### ZimaOS Dashboard Tile
+
+If the ZimaOS dashboard shows the app as `source` with a generic/incomplete icon, it is stale dashboard metadata from the original CLI deploy folder name.
+
+The compose file now includes:
+
+- `name: peptide-power-assistant`
+- `x-casaos` metadata for title, icon, Web UI port, and main service
+
+To recreate the container with the corrected compose project name:
+
+```bash
+ssh <zimaboard-user>@<zimaboard-host>
+cd /DATA/AppData/peptide-power-assistant/source
+sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
+  docker compose -p source -f docker-compose.zima.yml down
+sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
+  docker compose -f docker-compose.zima.yml pull
+sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
+  docker compose -f docker-compose.zima.yml up -d
+```
+
+This keeps the SQLite database because it lives in the persistent host path:
+
+```text
+/DATA/AppData/peptide-power-assistant/data/app.db
+```
+
+If the dashboard still keeps the stale `source` tile after a refresh, remove the old tile from the ZimaOS UI and import `docker-compose.zima.yml` through **App Store > Custom Install > Import > Docker Compose**. The compose metadata will populate the tile as **Peptide Power Assistant**.
 
 ### Update Flow
 
