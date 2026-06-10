@@ -103,7 +103,7 @@ make docker-down
 
 ## Zimaboard Deployment
 
-Current deployment model: copy source from the MacBook to the Zimaboard, build the container directly on the Zimaboard, and keep SQLite data outside the container.
+Current deployment model: GitHub Actions publishes a Docker image to GHCR, Zimaboard pulls that image, and SQLite data stays outside the container.
 
 Confirmed Zimaboard address:
 
@@ -137,27 +137,19 @@ The app database is stored at:
 /DATA/AppData/peptide-power-assistant/data/app.db
 ```
 
-### First-Time Source Copy
+### Image
 
-From the MacBook:
-
-```bash
-rsync -av --delete \
-  --exclude data \
-  --exclude .git \
-  --exclude __pycache__ \
-  --exclude '*.pyc' \
-  /Users/skrems/Projects/peptide-power-assistant/ \
-  admin@zimaboard:/DATA/AppData/peptide-power-assistant/source/
-```
-
-The database was copied separately to:
+The image is published by GitHub Actions to:
 
 ```text
-/DATA/AppData/peptide-power-assistant/data/app.db
+ghcr.io/skrems/peptide-power-assistant:latest
 ```
 
-If it ever needs to be copied again from the MacBook:
+The GHCR package has been made public so Zimaboard can pull it without `docker login`.
+
+### Database Copy
+
+The database was copied separately to the Zimaboard data path. If it ever needs to be copied again from the MacBook:
 
 ```bash
 scp /Users/skrems/Projects/peptide-power-assistant/data/app.db admin@zimaboard:/tmp/app.db
@@ -170,6 +162,14 @@ The repo includes this Zimaboard-specific compose file:
 
 ```text
 /DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
+```
+
+Copy or update it from the MacBook with:
+
+```bash
+rsync -av \
+  /Users/skrems/Projects/peptide-power-assistant/docker-compose.zima.yml \
+  admin@zimaboard:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
 ```
 
 It pins the app to Pacific time so calendar days match local use even if the Zimaboard host timezone differs:
@@ -192,14 +192,6 @@ services:
     volumes:
       - /DATA/AppData/peptide-power-assistant/data:/data
 ```
-
-The image is published by GitHub Actions to:
-
-```text
-ghcr.io/skrems/peptide-power-assistant:latest
-```
-
-After the first publish, GitHub may mark the package private. If Zimaboard cannot pull it, open the package settings in GitHub and set the package visibility to public.
 
 ZimaOS has a read-only `/root` for this Docker CLI path, so CLI commands use a writable Docker config directory:
 
@@ -243,7 +235,7 @@ git diff --check
 
 2. Commit and push as usual.
 
-3. GitHub Actions publishes a new image:
+3. GitHub Actions publishes a new image automatically:
 
 ```text
 ghcr.io/skrems/peptide-power-assistant:latest
