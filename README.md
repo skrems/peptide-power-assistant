@@ -2,8 +2,6 @@
 
 Self-hosted protocol and dose tracker for a Zimaboard or similar local server.
 
-This is a clean MVP rewrite. It does not use AWS, Amplify, Cognito, AppSync, or the old calculator/inventory code.
-
 ## MVP Features
 
 - Local username/password login.
