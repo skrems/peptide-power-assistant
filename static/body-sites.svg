@@ -1,26 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 320" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 220" role="img" aria-labelledby="title desc">
   <title id="title">Injection site body guide</title>
-  <desc id="desc">Simple front body outline with common injection regions highlighted.</desc>
-  <rect width="220" height="320" rx="24" fill="#eef6f3"/>
-  <g fill="none" stroke="#0f7c72" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="110" cy="46" r="25" fill="#ffffff"/>
-    <path d="M78 88c10-12 54-12 64 0l14 88c3 18-8 36-25 42l-21 8-21-8c-17-6-28-24-25-42l14-88Z" fill="#ffffff"/>
-    <path d="M77 98 42 163M143 98l35 65M91 220 80 288M129 220l11 68"/>
+  <desc id="desc">Minimal body icon with common injection areas marked.</desc>
+  <rect width="160" height="220" rx="24" fill="#eef6f3"/>
+  <g fill="#fff" stroke="#0f7c72" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="80" cy="35" r="18"/>
+    <path d="M58 70h44l10 74c2 14-8 27-22 30l-10 2-10-2c-14-3-24-16-22-30L58 70Z"/>
+    <path d="M58 78 37 126M102 78l21 48M69 174l-8 33M91 174l8 33"/>
   </g>
-  <g fill="#f6c453" stroke="#8a5a00" stroke-width="3">
-    <circle cx="82" cy="137" r="14"/>
-    <circle cx="138" cy="137" r="14"/>
-    <circle cx="96" cy="177" r="14"/>
-    <circle cx="124" cy="177" r="14"/>
-    <circle cx="74" cy="226" r="13"/>
-    <circle cx="146" cy="226" r="13"/>
-    <circle cx="50" cy="160" r="11"/>
-    <circle cx="170" cy="160" r="11"/>
-  </g>
-  <g fill="#315f94" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="800" text-anchor="middle">
-    <text x="110" y="122">abdomen</text>
-    <text x="110" y="250">thighs</text>
-    <text x="110" y="300">rotate sites</text>
+  <g fill="#f6c453" stroke="#8a5a00" stroke-width="2.5">
+    <circle cx="66" cy="113" r="7"/>
+    <circle cx="94" cy="113" r="7"/>
+    <circle cx="61" cy="158" r="7"/>
+    <circle cx="99" cy="158" r="7"/>
+    <circle cx="40" cy="124" r="6"/>
+    <circle cx="120" cy="124" r="6"/>
   </g>
 </svg>
-
