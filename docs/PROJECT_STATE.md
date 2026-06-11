@@ -19,9 +19,7 @@ The current Zimaboard deployment is pinned to:
 ghcr.io/skrems/peptide-power-assistant:v1.3
 ```
 
-GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS should use the explicit `vX.Y` tag so the dashboard can detect version changes.
-
-GitHub Actions also publishes `zima-gui-test` on pushes to `main`. This is a moving test tag for validating ZimaOS dashboard **Check and update** behavior. Set the dashboard app to `zima-gui-test`, push a visible app change to `main`, wait for the image to publish, then use the dashboard update check.
+GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS custom apps should use explicit `vX.Y` tags. Testing showed the dashboard does not reliably detect a changed digest under the same custom tag.
 
 The GHCR package is public so Zimaboard can pull without `docker login`.
 
