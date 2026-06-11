@@ -13,11 +13,13 @@ Peptide Power Assistant is a self-hosted Python/SQLite web app for dose logging,
 git@github.com:skrems/peptide-power-assistant.git
 ```
 
-GitHub Actions publishes:
+The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:latest
+ghcr.io/skrems/peptide-power-assistant:v1.2
 ```
+
+GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS should use the explicit `vX.Y` tag so the dashboard can detect version changes.
 
 The GHCR package is public so Zimaboard can pull without `docker login`.
 
@@ -76,7 +78,7 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:latest
+image: ghcr.io/skrems/peptide-power-assistant:v1.2
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:
@@ -143,9 +145,22 @@ If ZimaOS still keeps a stale `source` launcher after refresh, remove that tile 
 ## Update Flow
 
 1. Make and test changes on the MacBook.
-2. Commit and push to `main`.
-3. GitHub Actions publishes `ghcr.io/skrems/peptide-power-assistant:latest`.
-4. If `docker-compose.zima.yml` changed, copy it:
+2. Bump the image tag in `docker-compose.zima.yml`, for example from `v1.2` to `v1.3`.
+3. Commit and push to `main`.
+4. Create and push the matching git tag:
+
+```bash
+git tag v1.3
+git push origin v1.3
+```
+
+GitHub Actions publishes the matching image tag:
+
+```text
+ghcr.io/skrems/peptide-power-assistant:v1.3
+```
+
+5. If `docker-compose.zima.yml` changed, copy it:
 
 ```bash
 rsync -av \
@@ -153,7 +168,7 @@ rsync -av \
   <zimaboard-user>@<zimaboard-host>:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
 ```
 
-5. Pull and restart on Zimaboard:
+6. Pull and restart on Zimaboard:
 
 ```bash
 ssh <zimaboard-user>@<zimaboard-host>

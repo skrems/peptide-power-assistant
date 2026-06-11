@@ -138,11 +138,13 @@ The app database is stored at:
 
 ### Image
 
-The image is published by GitHub Actions to:
+The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:latest
+ghcr.io/skrems/peptide-power-assistant:v1.2
 ```
+
+GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS should use the explicit `vX.Y` tag so GUI updates can detect a real version change.
 
 The GHCR package has been made public so Zimaboard can pull it without `docker login`.
 
@@ -178,7 +180,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:latest
+    image: ghcr.io/skrems/peptide-power-assistant:v1.2
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
@@ -277,13 +279,22 @@ git diff --check
 
 2. Commit and push as usual.
 
-3. GitHub Actions publishes a new image automatically:
+3. For a ZimaOS GUI-friendly release, bump the image tag in `docker-compose.zima.yml`, for example from `v1.2` to `v1.3`, then commit and push.
 
-```text
-ghcr.io/skrems/peptide-power-assistant:latest
+4. Create and push a matching git tag:
+
+```bash
+git tag v1.3
+git push origin v1.3
 ```
 
-4. Copy the latest compose file to Zimaboard only if it changed:
+GitHub Actions publishes the matching image tag:
+
+```text
+ghcr.io/skrems/peptide-power-assistant:v1.3
+```
+
+5. Copy the latest compose file to Zimaboard only if it changed:
 
 ```bash
 rsync -av \
@@ -291,7 +302,7 @@ rsync -av \
   <zimaboard-user>@<zimaboard-host>:/DATA/AppData/peptide-power-assistant/source/docker-compose.zima.yml
 ```
 
-5. Pull and restart on the Zimaboard:
+6. Pull and restart on the Zimaboard:
 
 ```bash
 ssh <zimaboard-user>@<zimaboard-host>
