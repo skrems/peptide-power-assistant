@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
+APP_VERSION = "v1.3"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -1573,6 +1574,10 @@ def render_settings(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     <section class="panel">
       <h2>Install on iPhone</h2>
       <p class="meta">Open this site in Safari, tap Share, then Add to Home Screen.</p>
+    </section>
+    <section class="panel">
+      <h2>About</h2>
+      <p class="meta">App version {h(APP_VERSION)}</p>
     </section>
     """
     return layout(ctx, "/settings", "Settings", body)

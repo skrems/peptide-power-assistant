@@ -16,7 +16,7 @@ git@github.com:skrems/peptide-power-assistant.git
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.2
+ghcr.io/skrems/peptide-power-assistant:v1.3
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS should use the explicit `vX.Y` tag so the dashboard can detect version changes.
@@ -78,7 +78,7 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:v1.2
+image: ghcr.io/skrems/peptide-power-assistant:v1.3
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:
@@ -145,19 +145,19 @@ If ZimaOS still keeps a stale `source` launcher after refresh, remove that tile 
 ## Update Flow
 
 1. Make and test changes on the MacBook.
-2. Bump the image tag in `docker-compose.zima.yml`, for example from `v1.2` to `v1.3`.
+2. Bump the image tag in `docker-compose.zima.yml`, for example from `v1.3` to `v1.4`.
 3. Commit and push to `main`.
 4. Create and push the matching git tag:
 
 ```bash
-git tag v1.3
-git push origin v1.3
+git tag v1.4
+git push origin v1.4
 ```
 
 GitHub Actions publishes the matching image tag:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.3
+ghcr.io/skrems/peptide-power-assistant:v1.4
 ```
 
 5. If `docker-compose.zima.yml` changed, copy it:

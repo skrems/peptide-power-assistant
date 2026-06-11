@@ -237,6 +237,9 @@ def main() -> int:
         require(edited_log, "6 mg")
         require(edited_log, "Right Thigh")
 
+        settings = client.get("/settings")
+        require(settings, "App version v1.3")
+
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")
         require(calendar, "May 2026")

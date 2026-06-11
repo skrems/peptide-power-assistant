@@ -141,7 +141,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.2
+ghcr.io/skrems/peptide-power-assistant:v1.3
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS should use the explicit `vX.Y` tag so GUI updates can detect a real version change.
@@ -180,7 +180,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.2
+    image: ghcr.io/skrems/peptide-power-assistant:v1.3
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
@@ -279,19 +279,19 @@ git diff --check
 
 2. Commit and push as usual.
 
-3. For a ZimaOS GUI-friendly release, bump the image tag in `docker-compose.zima.yml`, for example from `v1.2` to `v1.3`, then commit and push.
+3. For a ZimaOS GUI-friendly release, bump the image tag in `docker-compose.zima.yml`, for example from `v1.3` to `v1.4`, then commit and push.
 
 4. Create and push a matching git tag:
 
 ```bash
-git tag v1.3
-git push origin v1.3
+git tag v1.4
+git push origin v1.4
 ```
 
 GitHub Actions publishes the matching image tag:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.3
+ghcr.io/skrems/peptide-power-assistant:v1.4
 ```
 
 5. Copy the latest compose file to Zimaboard only if it changed:
