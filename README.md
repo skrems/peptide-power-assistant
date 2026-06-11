@@ -146,6 +146,14 @@ ghcr.io/skrems/peptide-power-assistant:v1.3
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS should use the explicit `vX.Y` tag so GUI updates can detect a real version change.
 
+For testing ZimaOS's **Check and update** button, GitHub Actions also publishes a moving test tag:
+
+```text
+ghcr.io/skrems/peptide-power-assistant:zima-gui-test
+```
+
+Set the dashboard app to `zima-gui-test` once, then push a visible app change to `main`. The tag will move to the new image digest, which lets the dashboard update check test a same-tag/new-digest pull.
+
 The GHCR package has been made public so Zimaboard can pull it without `docker login`.
 
 ### Database Copy
@@ -313,7 +321,7 @@ sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
   docker compose -f docker-compose.zima.yml up -d
 ```
 
-6. Verify:
+Verify after any update:
 
 ```bash
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
@@ -325,6 +333,24 @@ The container should report:
 ```text
 Peptide Power Assistant running at http://0.0.0.0:8080
 ```
+
+### ZimaOS GUI Update Test
+
+To test dashboard-driven updates without changing the production version tag:
+
+1. In the ZimaOS app settings, set:
+
+```text
+Docker image: ghcr.io/skrems/peptide-power-assistant
+Tag: zima-gui-test
+```
+
+2. Save/recreate the app once so it runs the current `zima-gui-test` image.
+3. Make a small visible app change and push to `main`.
+4. Wait for GitHub Actions to publish `zima-gui-test`.
+5. In ZimaOS, use **Check and update**.
+
+This tests whether the dashboard detects a changed image digest under the same tag.
 
 ### Backups
 
