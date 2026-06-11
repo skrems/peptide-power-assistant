@@ -14,6 +14,7 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Dose log with protocol and manual entries, peptide filtering, edit, and delete.
 - Calendar view with peptide colors and day-level add, edit, and delete.
 - Daily check-in notes.
+- Admin-only SQLite backup export.
 - PWA manifest so the app can be added to an iPhone home screen.
 - SQLite database stored at `/data/app.db`.
 
@@ -316,10 +317,16 @@ Peptide Power Assistant running at http://0.0.0.0:8080
 
 ### Backups
 
-Before larger updates, back up the Zimaboard database:
+Admins can download a consistent SQLite snapshot from:
+
+```text
+Admin > Export backup file
+```
+
+For automated Zimaboard backups, use SQLite's online backup command instead of copying the live database file:
 
 ```bash
-ssh <zimaboard-user>@<zimaboard-host> 'cp /DATA/AppData/peptide-power-assistant/data/app.db /DATA/AppData/peptide-power-assistant/data/app-backup-$(date +%Y%m%d-%H%M%S).db'
+ssh <zimaboard-user>@<zimaboard-host> 'mkdir -p /DATA/AppData/peptide-power-assistant/backups && sqlite3 /DATA/AppData/peptide-power-assistant/data/app.db ".backup /DATA/AppData/peptide-power-assistant/backups/app-$(date +%Y%m%d-%H%M%S).db"'
 ```
 
 Container rebuilds should not erase app data because `/data` is mounted from:
@@ -341,6 +348,8 @@ Zimaboard SQLite database:
 ```text
 /DATA/AppData/peptide-power-assistant/data/app.db
 ```
+
+The Admin export button uses SQLite's backup API and downloads a timestamped `.db` file.
 
 ## Medical Safety
 

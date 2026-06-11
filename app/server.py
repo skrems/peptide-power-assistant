@@ -8,6 +8,7 @@ import os
 import secrets
 import sqlite3
 import sys
+import tempfile
 import urllib.parse
 import calendar as calendar_lib
 from dataclasses import dataclass
@@ -1506,6 +1507,15 @@ def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     ) or '<div class="empty">No peptides yet.</div>'
     body = f"""
     <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Backup</h2>
+          <p class="meta">Download a consistent SQLite snapshot of all app data.</p>
+        </div>
+      </div>
+      <div class="button-row"><a class="button" href="/backup">Export backup file</a></div>
+    </section>
+    <section class="panel">
       <div class="panel-head"><h2>Peptides</h2></div>
       <form method="post" action="/admin/peptides" class="stack">
         <div class="grid three">
@@ -1559,7 +1569,6 @@ def render_settings(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
         <article class="item"><h3>{counts['logs']} dose logs</h3><p class="meta">Your tracked protocol and manual doses.</p></article>
         <article class="item"><h3>{counts['checkins']} check-ins</h3><p class="meta">Daily symptom and note entries.</p></article>
       </div>
-      <div class="button-row"><a class="button secondary" href="/backup">Download SQLite backup</a></div>
     </section>
     <section class="panel">
       <h2>Install on iPhone</h2>
@@ -1608,6 +1617,10 @@ class App(BaseHTTPRequestHandler):
         if not ctx.user:
             return self.redirect("/login")
 
+        if parsed.path == "/backup":
+            self.require_admin(ctx)
+            return self.download_backup()
+
         params = urllib.parse.parse_qs(parsed.query)
         with db() as conn:
             if parsed.path == "/":
@@ -1622,8 +1635,6 @@ class App(BaseHTTPRequestHandler):
                 return self.html(render_admin(ctx, conn))
             if parsed.path == "/settings":
                 return self.html(render_settings(ctx, conn))
-            if parsed.path == "/backup":
-                return self.download_backup()
         self.not_found()
 
     def route_post(self) -> None:
@@ -2028,10 +2039,20 @@ class App(BaseHTTPRequestHandler):
     def download_backup(self) -> None:
         if not DB_PATH.exists():
             return self.not_found()
-        data = DB_PATH.read_bytes()
-        filename = f"peptide-power-assistant-{today_iso()}.db"
+        backup_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix="peptide-power-assistant-", suffix=".db", delete=False) as tmp:
+                backup_path = Path(tmp.name)
+            with sqlite3.connect(DB_PATH) as source, sqlite3.connect(backup_path) as target:
+                source.backup(target)
+            data = backup_path.read_bytes()
+        finally:
+            if backup_path:
+                backup_path.unlink(missing_ok=True)
+        timestamp = datetime.now(app_timezone()).strftime("%Y%m%d-%H%M%S")
+        filename = f"peptide-power-assistant-{timestamp}.db"
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Type", "application/vnd.sqlite3")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()

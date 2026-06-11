@@ -174,10 +174,16 @@ Persistent data is SQLite at:
 
 The container image does not include local DB files, user records, logs, or passwords. `.dockerignore` excludes local data and database files from Docker builds.
 
-Backup before larger updates:
+Admins can download a consistent SQLite snapshot from:
+
+```text
+Admin > Export backup file
+```
+
+For automated Zimaboard backups, use SQLite's online backup command instead of copying the live database file:
 
 ```bash
-ssh <zimaboard-user>@<zimaboard-host> 'cp /DATA/AppData/peptide-power-assistant/data/app.db /DATA/AppData/peptide-power-assistant/data/app-backup-$(date +%Y%m%d-%H%M%S).db'
+ssh <zimaboard-user>@<zimaboard-host> 'mkdir -p /DATA/AppData/peptide-power-assistant/backups && sqlite3 /DATA/AppData/peptide-power-assistant/data/app.db ".backup /DATA/AppData/peptide-power-assistant/backups/app-$(date +%Y%m%d-%H%M%S).db"'
 ```
 
 ## Current Features
@@ -193,6 +199,7 @@ ssh <zimaboard-user>@<zimaboard-host> 'cp /DATA/AppData/peptide-power-assistant/
 - Calendar month view with peptide colors.
 - Calendar day add/edit/delete.
 - Daily check-ins.
+- Admin-only SQLite backup export.
 - PWA manifest for iPhone home screen install.
 
 ## Known Notes

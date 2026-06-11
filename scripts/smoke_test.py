@@ -35,6 +35,10 @@ class Client:
         with self.opener.open(f"{self.base_url}{path}", timeout=10) as response:
             return response.read().decode("utf-8")
 
+    def get_bytes(self, path: str) -> tuple[bytes, dict[str, str]]:
+        with self.opener.open(f"{self.base_url}{path}", timeout=10) as response:
+            return response.read(), dict(response.headers.items())
+
     def post(self, path: str, data: dict[str, str]) -> str:
         encoded = urllib.parse.urlencode(data).encode("utf-8")
         request = urllib.request.Request(f"{self.base_url}{path}", data=encoded, method="POST")
@@ -294,6 +298,32 @@ def main() -> int:
         require(admin, 'value="#8b0000"')
         require(admin, "Add user")
         require(admin, ADMIN_EMAIL)
+        require(admin, "Export backup file")
+
+        backup_data, backup_headers = client.get_bytes("/backup")
+        if not backup_data.startswith(b"SQLite format 3"):
+            raise AssertionError("backup export did not return a SQLite database")
+        if "peptide-power-assistant-" not in backup_headers.get("Content-Disposition", ""):
+            raise AssertionError("backup export did not include the expected filename")
+
+        client.post(
+            "/admin/users",
+            {
+                "email": "member@example.local",
+                "display_name": "Smoke Member",
+                "password": "member-password",
+                "role": "member",
+            },
+        )
+        member_client = Client(f"http://127.0.0.1:{port}")
+        member_client.post("/login", {"email": "member@example.local", "password": "member-password"})
+        try:
+            member_client.get_bytes("/backup")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 403:
+                raise AssertionError(f"member backup export returned {exc.code}, expected 403") from exc
+        else:
+            raise AssertionError("member account was allowed to export backup")
 
         print(f"Smoke test passed at http://127.0.0.1:{port}")
         return 0
