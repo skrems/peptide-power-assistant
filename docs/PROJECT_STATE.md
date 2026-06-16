@@ -16,7 +16,7 @@ git@github.com:skrems/peptide-power-assistant.git
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.4
+ghcr.io/skrems/peptide-power-assistant:v1.5
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS custom apps should use explicit `vX.Y` tags. Testing showed the dashboard does not reliably detect a changed digest under the same custom tag.
@@ -78,7 +78,7 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:v1.4
+image: ghcr.io/skrems/peptide-power-assistant:v1.5
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:
@@ -145,19 +145,19 @@ If ZimaOS still keeps a stale `source` launcher after refresh, remove that tile 
 ## Update Flow
 
 1. Make and test changes on the MacBook.
-2. Bump the image tag in `docker-compose.zima.yml`, for example from `v1.3` to `v1.4`.
+2. Bump the image tag in `docker-compose.zima.yml`.
 3. Commit and push to `main`.
 4. Create and push the matching git tag:
 
 ```bash
-git tag v1.4
-git push origin v1.4
+git tag <version>
+git push origin <version>
 ```
 
 GitHub Actions publishes the matching image tag:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.4
+ghcr.io/skrems/peptide-power-assistant:<version>
 ```
 
 5. If `docker-compose.zima.yml` changed, copy it:
@@ -208,6 +208,7 @@ ssh <zimaboard-user>@<zimaboard-host> 'mkdir -p /DATA/AppData/peptide-power-assi
 - Admin protocol CRUD and publishing.
 - Protocol steps support daily, every N days, selected weekdays, and rest.
 - Protocol and dose input accepts values in mg or mcg; mcg is stored as mg internally.
+- Seeded published protocols include GHK-Cu and a user-provided Selank SK10 12-week cycle.
 - Today view for due protocol tasks.
 - Manual and protocol dose logging.
 - Dose log filtering by peptide.

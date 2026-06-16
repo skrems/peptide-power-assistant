@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import sqlite3
 from pathlib import Path
 
 
@@ -66,6 +67,14 @@ def require(text: str, needle: str) -> None:
         raise AssertionError(f"missing expected text: {needle}")
 
 
+def protocol_id(db_path: Path, name: str) -> str:
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT id FROM protocols WHERE name = ?", (name,)).fetchone()
+    if not row:
+        raise AssertionError(f"protocol not found: {name}")
+    return str(row[0])
+
+
 def main() -> int:
     port = free_port()
     db_path = Path(tempfile.gettempdir()) / f"peptide-power-smoke-{port}.db"
@@ -96,6 +105,11 @@ def main() -> int:
 
         protocols = client.get("/protocols")
         require(protocols, "GHK-Cu 60-day ramp")
+        require(protocols, "Selank SK10 12-week cycle")
+        require(protocols, "Days 1-3: 0.25 mg · Daily")
+        require(protocols, "Days 4-14: 0.4 mg · Daily")
+        require(protocols, "Days 29-42: 0 mg · Rest")
+        require(protocols, "Days 71-84: 0 mg · Rest")
         require(protocols, "<select name=\"peptide_name\">")
         require(protocols, "Days 1-15: 1 mg · Daily")
         require(protocols, "Days 16-30: 2 mg · Daily")
@@ -115,10 +129,11 @@ def main() -> int:
                 "description": "Every 7 days.",
             },
         )
+        retatrutide_id = protocol_id(db_path, "Retatrutide weekly")
         client.post(
             "/steps/save",
             {
-                "protocol_id": "2",
+                "protocol_id": retatrutide_id,
                 "start_day": "1",
                 "end_day": "84",
                 "dose_amount": "2",
@@ -131,7 +146,7 @@ def main() -> int:
         client.post(
             "/steps/save",
             {
-                "protocol_id": "2",
+                "protocol_id": retatrutide_id,
                 "start_day": "4",
                 "end_day": "14",
                 "dose_amount": "400 mcg",
@@ -151,10 +166,11 @@ def main() -> int:
                 "description": "Monday, Wednesday, Friday.",
             },
         )
+        mots_id = protocol_id(db_path, "MOTS-c MWF")
         client.post(
             "/steps/save",
             {
-                "protocol_id": "3",
+                "protocol_id": mots_id,
                 "start_day": "1",
                 "end_day": "42",
                 "dose_amount": "5",
@@ -252,7 +268,7 @@ def main() -> int:
         require(edited_log, "Right Thigh")
 
         settings = client.get("/settings")
-        require(settings, "App version v1.4")
+        require(settings, "App version v1.5")
 
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")

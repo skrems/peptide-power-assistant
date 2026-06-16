@@ -10,6 +10,7 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Admin peptide catalog for dropdowns in protocols and manual logging.
 - Editable protocol day ranges and dose steps.
 - Protocol and dose fields accept mg or mcg input, such as `0.4 mg` or `400 mcg`.
+- Seeded published protocols include GHK-Cu and a user-provided Selank SK10 12-week cycle.
 - Published protocol activation for users.
 - Today view showing protocol day, dose due, rest days, and completion state.
 - Dose log with protocol and manual entries, peptide filtering, edit, and delete.
@@ -142,7 +143,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.4
+ghcr.io/skrems/peptide-power-assistant:v1.5
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -181,7 +182,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.4
+    image: ghcr.io/skrems/peptide-power-assistant:v1.5
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
@@ -280,19 +281,19 @@ git diff --check
 
 2. Commit and push as usual.
 
-3. For a ZimaOS GUI-friendly release, bump the image tag in `docker-compose.zima.yml`, for example from `v1.3` to `v1.4`, then commit and push.
+3. For a ZimaOS GUI-friendly release, bump the image tag in `docker-compose.zima.yml`, then commit and push.
 
 4. Create and push a matching git tag:
 
 ```bash
-git tag v1.4
-git push origin v1.4
+git tag <version>
+git push origin <version>
 ```
 
 GitHub Actions publishes the matching image tag:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.4
+ghcr.io/skrems/peptide-power-assistant:<version>
 ```
 
 5. Copy the latest compose file to Zimaboard only if it changed:

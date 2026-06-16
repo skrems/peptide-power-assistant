@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.4"
+APP_VERSION = "v1.5"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -104,6 +104,7 @@ WEEKDAYS = [
 
 DEFAULT_PEPTIDE_COLORS = {
     "ghk-cu": "#7e3bb5",
+    "selank": "#315f94",
     "mots-c": "#e86f00",
     "retatrutide": "#8b0000",
     "ss-31": "#111111",
@@ -227,6 +228,7 @@ def init_db() -> None:
         seed_admin(conn)
         seed_peptides(conn)
         seed_ghk_protocol(conn)
+        seed_selank_protocol(conn)
 
 
 def migrate_protocol_steps(conn: sqlite3.Connection) -> None:
@@ -322,6 +324,7 @@ def seed_admin(conn: sqlite3.Connection) -> None:
 def seed_peptides(conn: sqlite3.Connection) -> None:
     defaults = [
         ("GHK-Cu", "Copper peptide protocols.", DEFAULT_PEPTIDE_COLORS["ghk-cu"]),
+        ("Selank", "SK10 cycle protocol candidate.", DEFAULT_PEPTIDE_COLORS["selank"]),
         ("MOTS-c", "Weekday cadence protocol candidate.", DEFAULT_PEPTIDE_COLORS["mots-c"]),
         ("Retatrutide", "Weekly or every-six-days protocol candidate.", DEFAULT_PEPTIDE_COLORS["retatrutide"]),
         ("SS-31", "Daily protocol candidate.", DEFAULT_PEPTIDE_COLORS["ss-31"]),
@@ -364,6 +367,47 @@ def seed_ghk_protocol(conn: sqlite3.Connection) -> None:
         (1, 1, 15, 1.0, "daily", "Phase 1"),
         (2, 16, 30, 2.0, "daily", "Phase 2"),
         (3, 31, 60, 0.0, "rest", "Rest period"),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO protocol_steps
+          (protocol_id, sort_order, start_day, end_day, dose_amount, dose_unit, cadence_type, instructions)
+        VALUES (?, ?, ?, ?, ?, 'mg', ?, ?)
+        """,
+        [(protocol_id, *step) for step in steps],
+    )
+
+
+def seed_selank_protocol(conn: sqlite3.Connection) -> None:
+    exists = conn.execute("SELECT id FROM protocols WHERE name = ?", ("Selank SK10 12-week cycle",)).fetchone()
+    if exists:
+        return
+    admin = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+    created_by = admin["id"] if admin else None
+    cursor = conn.execute(
+        """
+        INSERT INTO protocols
+          (name, peptide_name, description, status, created_by, created_at, updated_at, published_at)
+        VALUES (?, ?, ?, 'published', ?, ?, ?, ?)
+        """,
+        (
+            "Selank SK10 12-week cycle",
+            "Selank",
+            "User-provided 12-week cycle: weeks 1-4 on, weeks 5-6 off, weeks 7-10 on, weeks 11-12 off. Dose steps store mcg values as mg.",
+            created_by,
+            now_iso(),
+            now_iso(),
+            now_iso(),
+        ),
+    )
+    protocol_id = cursor.lastrowid
+    steps = [
+        (1, 1, 3, 0.25, "daily", "5 units (250 mcg) once daily in the morning; assess tolerance."),
+        (2, 4, 14, 0.4, "daily", "6-8 units (300-400 mcg) once daily or split 2x/day; upper example dose stored."),
+        (3, 15, 28, 0.5, "daily", "8-10 units (400-500 mcg) daily; optional higher range noted in source protocol."),
+        (4, 29, 42, 0.0, "rest", "Off/reset period. No Selank."),
+        (5, 43, 70, 0.5, "daily", "Maintenance using optimized Phase 1 dose, example 8-10 units (400-500 mcg) daily."),
+        (6, 71, 84, 0.0, "rest", "Off/reset period. No Selank."),
     ]
     conn.executemany(
         """
