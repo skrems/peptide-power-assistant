@@ -5,6 +5,7 @@ import hmac
 import json
 import mimetypes
 import os
+import re
 import secrets
 import sqlite3
 import sys
@@ -22,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.3"
+APP_VERSION = "v1.4"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -538,6 +539,21 @@ def format_dose(amount: Any) -> str:
     return f"{value:g}"
 
 
+def parse_dose_mg(value: str, label: str = "Dose") -> float:
+    raw = (value or "").strip().lower()
+    raw = raw.replace(",", "").replace("\u00b5", "u").replace("\u03bc", "u")
+    match = re.fullmatch(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*([a-z]*)", raw)
+    if not match:
+        raise ValueError(f"{label} must be a number, optionally followed by mg or mcg.")
+    amount = float(match.group(1))
+    unit = match.group(2) or "mg"
+    if unit in {"mg", "milligram", "milligrams"}:
+        return amount
+    if unit in {"mcg", "ug", "microgram", "micrograms"}:
+        return amount / 1000
+    raise ValueError(f"{label} unit must be mg or mcg.")
+
+
 def peptide_key(name: str | None) -> str:
     return (name or "").strip().lower()
 
@@ -821,7 +837,7 @@ def log_form(
             {peptide_select(conn, peptide_name)}
           </select>
         </label>
-        <label>Dose mg <input name="actual_dose_amount" inputmode="decimal" value="{h(dose_amount)}" required></label>
+        <label>Dose <input name="actual_dose_amount" inputmode="decimal" value="{h(dose_amount)}" placeholder="1 mg or 400 mcg" required></label>
         <label>Site <input name="site" value="{h(site)}" placeholder="optional"></label>
       </div>
       {injection_site_picker(site)}
@@ -904,7 +920,7 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
               <input type="hidden" name="enrollment_id" value="{enrollment['id']}">
               <input type="hidden" name="step_id" value="{step['id']}">
               <input type="hidden" name="protocol_day" value="{day}">
-              <label>Actual dose <input name="actual_dose_amount" inputmode="decimal" value="{format_dose(step['dose_amount'])}" required></label>
+              <label>Actual dose <input name="actual_dose_amount" inputmode="decimal" value="{format_dose(step['dose_amount'])}" placeholder="1 mg or 400 mcg" required></label>
               <label>Site <input name="site" placeholder="optional"></label>
               <label class="grid-span">Notes <input name="notes" placeholder="optional"></label>
               {injection_site_picker()}
@@ -1179,7 +1195,7 @@ def protocol_editor(conn: sqlite3.Connection, protocol: sqlite3.Row | None) -> s
         <div class="grid three">
           <label>Start day <input name="start_day" inputmode="numeric" value="1" required></label>
           <label>End day <input name="end_day" inputmode="numeric" value="15" required></label>
-          <label>Dose mg <input name="dose_amount" inputmode="decimal" value="1" required></label>
+          <label>Dose <input name="dose_amount" inputmode="decimal" value="1" placeholder="1 mg or 400 mcg" required></label>
         </div>
         {step_cadence_fields("daily", 7, "")}
         <label>Instructions <input name="instructions" placeholder="Phase 1"></label>
@@ -1206,7 +1222,7 @@ def step_list(protocol_id: int) -> str:
             <div class="grid three">
               <label>Start <input name="start_day" value="{step['start_day']}" required></label>
               <label>End <input name="end_day" value="{step['end_day']}" required></label>
-              <label>Dose mg <input name="dose_amount" value="{format_dose(step['dose_amount'])}" required></label>
+              <label>Dose <input name="dose_amount" value="{format_dose(step['dose_amount'])}" placeholder="1 mg or 400 mcg" required></label>
             </div>
             {step_cadence_fields(step['cadence_type'], step['interval_days'], step['weekdays'])}
             <label>Instructions <input name="instructions" value="{h(step['instructions'])}"></label>
@@ -1836,7 +1852,7 @@ class App(BaseHTTPRequestHandler):
                 int(data["protocol_day"]),
                 enrollment["peptide_name"],
                 step["dose_amount"],
-                float(data["actual_dose_amount"]),
+                parse_dose_mg(data["actual_dose_amount"], "Actual dose"),
                 data.get("site", "").strip(),
                 data.get("notes", "").strip(),
                 now_iso(),
@@ -1851,7 +1867,7 @@ class App(BaseHTTPRequestHandler):
         log_id = int(data.get("log_id") or 0)
         values = (
             peptide_name,
-            float(data["actual_dose_amount"]),
+            parse_dose_mg(data["actual_dose_amount"], "Actual dose"),
             data.get("site", "").strip(),
             data.get("notes", "").strip(),
             logged_at,
@@ -1877,7 +1893,7 @@ class App(BaseHTTPRequestHandler):
             (
                 user_id,
                 peptide_name,
-                float(data["actual_dose_amount"]),
+                parse_dose_mg(data["actual_dose_amount"], "Actual dose"),
                 data.get("site", "").strip(),
                 data.get("notes", "").strip(),
                 logged_at,
@@ -1927,7 +1943,7 @@ class App(BaseHTTPRequestHandler):
         step_id = int(data.get("step_id") or 0)
         start_day = int(data["start_day"])
         end_day = int(data["end_day"])
-        dose_amount = float(data["dose_amount"])
+        dose_amount = parse_dose_mg(data["dose_amount"])
         cadence_type = data.get("cadence_type", "daily").strip()
         if cadence_type not in {"daily", "every_n_days", "weekdays", "rest"}:
             cadence_type = "daily"

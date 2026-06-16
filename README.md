@@ -9,6 +9,7 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Admin protocol create, edit, publish, retire, and delete.
 - Admin peptide catalog for dropdowns in protocols and manual logging.
 - Editable protocol day ranges and dose steps.
+- Protocol and dose fields accept mg or mcg input, such as `0.4 mg` or `400 mcg`.
 - Published protocol activation for users.
 - Today view showing protocol day, dose due, rest days, and completion state.
 - Dose log with protocol and manual entries, peptide filtering, edit, and delete.
@@ -141,7 +142,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.3
+ghcr.io/skrems/peptide-power-assistant:v1.4
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -180,7 +181,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.3
+    image: ghcr.io/skrems/peptide-power-assistant:v1.4
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:

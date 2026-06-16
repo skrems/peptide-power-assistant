@@ -129,6 +129,19 @@ def main() -> int:
             },
         )
         client.post(
+            "/steps/save",
+            {
+                "protocol_id": "2",
+                "start_day": "4",
+                "end_day": "14",
+                "dose_amount": "400 mcg",
+                "cadence_type": "daily",
+                "interval_days": "1",
+                "weekdays": "",
+                "instructions": "Microgram dose",
+            },
+        )
+        client.post(
             "/protocols/save",
             {
                 "protocol_id": "",
@@ -154,6 +167,7 @@ def main() -> int:
         protocols = client.get("/protocols")
         require(protocols, "Retatrutide weekly")
         require(protocols, "Days 1-84: 2 mg · Every 7 days")
+        require(protocols, "Days 4-14: 0.4 mg · Daily")
         require(protocols, "MOTS-c MWF")
         require(protocols, "Days 1-42: 5 mg · Mon, Wed, Fri")
 
@@ -238,7 +252,7 @@ def main() -> int:
         require(edited_log, "Right Thigh")
 
         settings = client.get("/settings")
-        require(settings, "App version v1.3")
+        require(settings, "App version v1.4")
 
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")
