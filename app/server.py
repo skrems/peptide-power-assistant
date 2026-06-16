@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.5"
+APP_VERSION = "v1.6"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -105,6 +105,7 @@ WEEKDAYS = [
 DEFAULT_PEPTIDE_COLORS = {
     "ghk-cu": "#7e3bb5",
     "selank": "#315f94",
+    "tesamorelin": "#2f6fba",
     "mots-c": "#e86f00",
     "retatrutide": "#8b0000",
     "ss-31": "#111111",
@@ -229,6 +230,7 @@ def init_db() -> None:
         seed_peptides(conn)
         seed_ghk_protocol(conn)
         seed_selank_protocol(conn)
+        seed_tesamorelin_protocol(conn)
 
 
 def migrate_protocol_steps(conn: sqlite3.Connection) -> None:
@@ -325,6 +327,7 @@ def seed_peptides(conn: sqlite3.Connection) -> None:
     defaults = [
         ("GHK-Cu", "Copper peptide protocols.", DEFAULT_PEPTIDE_COLORS["ghk-cu"]),
         ("Selank", "SK10 cycle protocol candidate.", DEFAULT_PEPTIDE_COLORS["selank"]),
+        ("Tesamorelin", "TSM10 weekday cycle protocol candidate.", DEFAULT_PEPTIDE_COLORS["tesamorelin"]),
         ("MOTS-c", "Weekday cadence protocol candidate.", DEFAULT_PEPTIDE_COLORS["mots-c"]),
         ("Retatrutide", "Weekly or every-six-days protocol candidate.", DEFAULT_PEPTIDE_COLORS["retatrutide"]),
         ("SS-31", "Daily protocol candidate.", DEFAULT_PEPTIDE_COLORS["ss-31"]),
@@ -414,6 +417,47 @@ def seed_selank_protocol(conn: sqlite3.Connection) -> None:
         INSERT INTO protocol_steps
           (protocol_id, sort_order, start_day, end_day, dose_amount, dose_unit, cadence_type, instructions)
         VALUES (?, ?, ?, ?, ?, 'mg', ?, ?)
+        """,
+        [(protocol_id, *step) for step in steps],
+    )
+
+
+def seed_tesamorelin_protocol(conn: sqlite3.Connection) -> None:
+    exists = conn.execute("SELECT id FROM protocols WHERE name = ?", ("Tesamorelin TSM10 12-week cycle",)).fetchone()
+    if exists:
+        return
+    admin = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+    created_by = admin["id"] if admin else None
+    cursor = conn.execute(
+        """
+        INSERT INTO protocols
+          (name, peptide_name, description, status, created_by, created_at, updated_at, published_at)
+        VALUES (?, ?, ?, 'published', ?, ?, ?, ?)
+        """,
+        (
+            "Tesamorelin TSM10 12-week cycle",
+            "Tesamorelin",
+            "User-provided 12-week cycle using 5 on / 2 off cadence with Saturday and Sunday off. Evening timing notes are stored in each step.",
+            created_by,
+            now_iso(),
+            now_iso(),
+            now_iso(),
+        ),
+    )
+    protocol_id = cursor.lastrowid
+    weekdays = "mon,tue,wed,thu,fri"
+    steps = [
+        (1, 1, 7, 1.0, "weekdays", weekdays, "Week 1: 20 units (1 mg) in the evening; assess tolerance."),
+        (2, 8, 28, 1.5, "weekdays", weekdays, "Weeks 2-4: 30-40 units (1.5 mg) in the evening if tolerated."),
+        (3, 29, 56, 2.0, "weekdays", weekdays, "Weeks 5-8 maintenance: 40 units (2 mg) or optimized dose in the evening."),
+        (4, 57, 84, 2.0, "weekdays", weekdays, "Weeks 9-12: continue maintenance or taper if desired; evening timing."),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO protocol_steps
+          (protocol_id, sort_order, start_day, end_day, dose_amount, dose_unit,
+           cadence_type, weekdays, instructions)
+        VALUES (?, ?, ?, ?, ?, 'mg', ?, ?, ?)
         """,
         [(protocol_id, *step) for step in steps],
     )

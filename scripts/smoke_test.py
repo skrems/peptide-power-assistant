@@ -110,6 +110,11 @@ def main() -> int:
         require(protocols, "Days 4-14: 0.4 mg · Daily")
         require(protocols, "Days 29-42: 0 mg · Rest")
         require(protocols, "Days 71-84: 0 mg · Rest")
+        require(protocols, "Tesamorelin TSM10 12-week cycle")
+        require(protocols, "Days 1-7: 1 mg · Mon, Tue, Wed, Thu, Fri")
+        require(protocols, "Days 8-28: 1.5 mg · Mon, Tue, Wed, Thu, Fri")
+        require(protocols, "Days 29-56: 2 mg · Mon, Tue, Wed, Thu, Fri")
+        require(protocols, "Days 57-84: 2 mg · Mon, Tue, Wed, Thu, Fri")
         require(protocols, "<select name=\"peptide_name\">")
         require(protocols, "Days 1-15: 1 mg · Daily")
         require(protocols, "Days 16-30: 2 mg · Daily")
@@ -268,7 +273,7 @@ def main() -> int:
         require(edited_log, "Right Thigh")
 
         settings = client.get("/settings")
-        require(settings, "App version v1.5")
+        require(settings, "App version v1.6")
 
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")
