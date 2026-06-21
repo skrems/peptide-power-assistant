@@ -17,6 +17,7 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Calendar view with peptide colors and day-level add, edit, and delete.
 - Daily check-in notes.
 - Admin-only SQLite backup export.
+- Public link to the separate Peptide Protocol Library.
 - PWA manifest so the app can be added to an iPhone home screen.
 - SQLite database stored at `/data/app.db`.
 
@@ -59,6 +60,22 @@ Override with environment variables:
 
 ```bash
 PEPTIDE_ADMIN_EMAIL=you@example.com PEPTIDE_ADMIN_PASSWORD='strong password' python -m app.server
+```
+
+## Protocol Library Link
+
+Peptide Power Assistant links to the separate read-only Peptide Protocol Library at `/library`.
+
+By default, the redirect keeps the same hostname and swaps to port `8090`. For example:
+
+```text
+http://<zimaboard-ip>:8080/library -> http://<zimaboard-ip>:8090/
+```
+
+Override the destination if needed:
+
+```bash
+PEPTIDE_PROTOCOL_LIBRARY_URL=https://library.example.com python -m app.server
 ```
 
 ## Test On This MacBook
@@ -143,7 +160,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.6
+ghcr.io/skrems/peptide-power-assistant:v1.7
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -182,7 +199,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.6
+    image: ghcr.io/skrems/peptide-power-assistant:v1.7
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
@@ -192,6 +209,7 @@ services:
       PEPTIDE_PORT: "8080"
       PEPTIDE_DB: "/data/app.db"
       PEPTIDE_TIMEZONE: "America/Los_Angeles"
+      PEPTIDE_PROTOCOL_LIBRARY_PORT: "8090"
       TZ: "America/Los_Angeles"
       PEPTIDE_SECRET: "replace-this-with-a-long-random-secret"
     volumes:

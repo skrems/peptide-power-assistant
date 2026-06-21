@@ -2,7 +2,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.6
+    image: ghcr.io/skrems/peptide-power-assistant:v1.7
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
@@ -12,6 +12,7 @@ services:
       PEPTIDE_PORT: "8080"
       PEPTIDE_DB: "/data/app.db"
       PEPTIDE_TIMEZONE: "America/Los_Angeles"
+      PEPTIDE_PROTOCOL_LIBRARY_PORT: "8090"
       TZ: "America/Los_Angeles"
       PEPTIDE_SECRET: "replace-this-with-a-long-random-secret"
     volumes:

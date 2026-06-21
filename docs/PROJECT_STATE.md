@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-06-09
+Last updated: 2026-06-20
 
 ## Summary
 
@@ -16,12 +16,36 @@ git@github.com:skrems/peptide-power-assistant.git
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.6
+ghcr.io/skrems/peptide-power-assistant:v1.7
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS custom apps should use explicit `vX.Y` tags. Testing showed the dashboard does not reliably detect a changed digest under the same custom tag.
 
 The GHCR package is public so Zimaboard can pull without `docker login`.
+
+## Related Apps
+
+Peptide Protocol Library is a separate public/read-only reference app:
+
+```text
+<local-projects-path>/peptide-protocol-library
+ghcr.io/skrems/peptide-protocol-library:v1.0
+```
+
+It runs on port `8090` and intentionally does not share Peptide Power's login, dose logs, users, inventory, or private SQLite database.
+
+Peptide Power exposes `/library` as a public redirect. By default it keeps the same hostname and changes the port to `8090`, so both LAN and remote-hostname access work:
+
+```text
+http://<host>:8080/library -> http://<host>:8090/
+```
+
+Override with:
+
+```text
+PEPTIDE_PROTOCOL_LIBRARY_URL
+PEPTIDE_PROTOCOL_LIBRARY_PORT
+```
 
 ## Local Development
 
@@ -78,12 +102,13 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:v1.6
+image: ghcr.io/skrems/peptide-power-assistant:v1.7
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:
   PEPTIDE_DB: /data/app.db
   PEPTIDE_TIMEZONE: America/Los_Angeles
+  PEPTIDE_PROTOCOL_LIBRARY_PORT: "8090"
   TZ: America/Los_Angeles
 x-casaos:
   title:
@@ -217,6 +242,7 @@ ssh <zimaboard-user>@<zimaboard-host> 'mkdir -p /DATA/AppData/peptide-power-assi
 - Calendar day add/edit/delete.
 - Daily check-ins.
 - Admin-only SQLite backup export.
+- Public `/library` redirect to the separate read-only Peptide Protocol Library.
 - PWA manifest for iPhone home screen install.
 
 ## Known Notes

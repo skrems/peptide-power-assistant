@@ -47,6 +47,22 @@ class Client:
             return response.read().decode("utf-8")
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None
+
+
+def redirect_location(url: str) -> str:
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        opener.open(url, timeout=10)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {301, 302, 303, 307, 308}:
+            return exc.headers["Location"]
+        raise
+    raise AssertionError("expected redirect")
+
+
 def wait_for_server(client: Client, proc: subprocess.Popen[str]) -> None:
     deadline = time.time() + 15
     last_error: Exception | None = None
@@ -99,6 +115,10 @@ def main() -> int:
     client = Client(f"http://127.0.0.1:{port}")
     try:
         wait_for_server(client, proc)
+
+        library_location = redirect_location(f"http://127.0.0.1:{port}/library")
+        if library_location != "http://127.0.0.1:8090/":
+            raise AssertionError(f"unexpected library redirect: {library_location}")
 
         login = client.post("/login", {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
         require(login, "Today")
@@ -273,7 +293,7 @@ def main() -> int:
         require(edited_log, "Right Thigh")
 
         settings = client.get("/settings")
-        require(settings, "App version v1.6")
+        require(settings, "App version v1.7")
 
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")

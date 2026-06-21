@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.6"
+APP_VERSION = "v1.7"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -33,6 +33,8 @@ SECRET = os.environ.get("PEPTIDE_SECRET", secrets.token_hex(32))
 ADMIN_EMAIL = os.environ.get("PEPTIDE_ADMIN_EMAIL", "admin@example.local").strip().lower()
 ADMIN_PASSWORD = os.environ.get("PEPTIDE_ADMIN_PASSWORD", "change-me-now")
 APP_TIMEZONE_NAME = os.environ.get("PEPTIDE_TIMEZONE", os.environ.get("TZ", "America/Los_Angeles"))
+PROTOCOL_LIBRARY_URL = os.environ.get("PEPTIDE_PROTOCOL_LIBRARY_URL", "").strip()
+PROTOCOL_LIBRARY_PORT = os.environ.get("PEPTIDE_PROTOCOL_LIBRARY_PORT", "8090").strip()
 
 SESSIONS: dict[str, int] = {}
 
@@ -487,10 +489,15 @@ def nav_item(path: str, label: str, active: str, icon: str) -> str:
     return f'<a class="{current}" href="{path}">{icon}<span>{label}</span></a>'
 
 
+def nav_link(path: str, label: str, icon_svg: str) -> str:
+    return f'<a href="{path}">{icon_svg}<span>{label}</span></a>'
+
+
 def icon(name: str) -> str:
     icons = {
         "today": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v15H4z"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>',
         "protocols": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 4h10l3 3v13H7z"/><path d="M17 4v4h4M10 12h7M10 16h7"/></svg>',
+        "library": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h11l3 3v13H5z"/><path d="M16 4v4h4M8 12h8M8 16h6"/></svg>',
         "log": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
         "calendar": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v15H4z"/><path d="M8 3v4M16 3v4M4 10h16"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/></svg>',
         "admin": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l7 4v5c0 5-3 8-7 9-4-1-7-4-7-9V7z"/><path d="M9 12l2 2 4-5"/></svg>',
@@ -541,6 +548,7 @@ def layout(ctx: RequestContext, active: str, title: str, body: str) -> bytes:
       <nav class="tabs">
         {nav_item("/", "Today", active, icon("today"))}
         {nav_item("/protocols", "Protocols", active, icon("protocols"))}
+        {nav_link("/library", "Library", icon("library"))}
         {nav_item("/log", "Log", active, icon("log"))}
         {nav_item("/calendar", "Calendar", active, icon("calendar"))}
         {admin_nav}
@@ -606,6 +614,7 @@ def login_page(error: str | None = None) -> bytes:
             <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
             <button type="submit">Log in</button>
           </form>
+          <p class="meta"><a href="/library">Open public protocol library</a></p>
         </div>
       </section>
     </body>
@@ -898,6 +907,19 @@ def current_path(path: str, params: dict[str, list[str]], exclude: set[str] | No
     }
     query = urllib.parse.urlencode(clean_params)
     return f"{path}?{query}" if query else path
+
+
+def host_with_port(host_header: str, port: str) -> str:
+    host = (host_header or "").strip()
+    if not host:
+        return f"127.0.0.1:{port}"
+    if host.startswith("["):
+        end = host.find("]")
+        if end != -1:
+            return f"{host[:end + 1]}:{port}"
+    if ":" in host:
+        return f"{host.rsplit(':', 1)[0]}:{port}"
+    return f"{host}:{port}"
 
 
 def log_form(
@@ -1692,7 +1714,7 @@ class App(BaseHTTPRequestHandler):
 
     def do_HEAD(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path in {"/", "/login", "/healthz"}:
+        if parsed.path in {"/", "/login", "/library", "/healthz"}:
             self.send_response(HTTPStatus.OK)
             self.end_headers()
             return
@@ -1721,6 +1743,8 @@ class App(BaseHTTPRequestHandler):
             return self.serve_static(STATIC_DIR / "service-worker.js")
         if parsed.path == "/login":
             return self.html(login_page())
+        if parsed.path == "/library":
+            return self.redirect(self.protocol_library_location())
 
         ctx = self.context()
         if not ctx.user:
@@ -2178,6 +2202,13 @@ class App(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", location)
         self.end_headers()
+
+    def protocol_library_location(self) -> str:
+        if PROTOCOL_LIBRARY_URL:
+            return PROTOCOL_LIBRARY_URL
+        proto = self.headers.get("X-Forwarded-Proto", "http").split(",", 1)[0].strip() or "http"
+        host = host_with_port(self.headers.get("Host", ""), PROTOCOL_LIBRARY_PORT or "8090")
+        return f"{proto}://{host}/"
 
     def not_found(self) -> None:
         self.send_response(HTTPStatus.NOT_FOUND)
