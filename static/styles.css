@@ -476,10 +476,7 @@ button.text {
 
 .calendar-dose {
   min-height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  display: block;
   border-left: 5px solid var(--peptide-color);
   border-radius: 6px;
   background: #fbfdfc;
@@ -492,23 +489,10 @@ button.text {
 }
 
 .calendar-dose span {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.calendar-dose strong {
-  flex: 0 0 auto;
-  min-width: 0;
-  min-height: 18px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--soft);
-  color: var(--accent-dark);
-  padding: 2px 6px;
-  font-size: 11px;
   white-space: nowrap;
 }
 

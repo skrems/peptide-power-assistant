@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.8"
+APP_VERSION = "v1.9"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -1487,8 +1487,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
             chips = "".join(
                 f"""
                 <a class="calendar-dose" href="{h(day_href)}" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
-                  <span>{h(row['peptide_name'])}</span>
-                  <strong>{format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</strong>
+                  <span>{h(row['peptide_name'])} {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</span>
                 </a>
                 """
                 for row in day_rows
