@@ -16,7 +16,7 @@ git@github.com:skrems/peptide-power-assistant.git
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.7
+ghcr.io/skrems/peptide-power-assistant:v1.8
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS custom apps should use explicit `vX.Y` tags. Testing showed the dashboard does not reliably detect a changed digest under the same custom tag.
@@ -102,7 +102,7 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:v1.7
+image: ghcr.io/skrems/peptide-power-assistant:v1.8
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:
@@ -238,7 +238,7 @@ ssh <zimaboard-user>@<zimaboard-host> 'mkdir -p /DATA/AppData/peptide-power-assi
 - Manual and protocol dose logging.
 - Dose log filtering by peptide.
 - Dose log edit/delete.
-- Calendar month view with peptide colors.
+- Calendar month view with peptide colors and individual dose amounts.
 - Calendar day add/edit/delete.
 - Daily check-ins.
 - Admin-only SQLite backup export.

@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.7"
+APP_VERSION = "v1.8"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -1460,11 +1460,10 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
     rows = query(
         conn,
         """
-        SELECT substr(logged_at, 1, 10) AS log_date, peptide_name, count(*) AS dose_count
+        SELECT id, substr(logged_at, 1, 10) AS log_date, peptide_name, actual_dose_amount, dose_unit, logged_at
         FROM dose_logs
         WHERE user_id = ? AND substr(logged_at, 1, 10) >= ? AND substr(logged_at, 1, 10) <= ?
-        GROUP BY log_date, peptide_name
-        ORDER BY log_date, lower(peptide_name)
+        ORDER BY log_date, logged_at, id
         """,
         (ctx.user["id"], month_start.isoformat(), month_end.isoformat()),
     )
@@ -1489,7 +1488,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
                 f"""
                 <a class="calendar-dose" href="{h(day_href)}" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
                   <span>{h(row['peptide_name'])}</span>
-                  <strong>{row['dose_count']}</strong>
+                  <strong>{format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</strong>
                 </a>
                 """
                 for row in day_rows

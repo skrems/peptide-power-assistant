@@ -292,14 +292,30 @@ def main() -> int:
         require(edited_log, "6 mg")
         require(edited_log, "Right Thigh")
 
+        client.post(
+            "/logs/save",
+            {
+                "log_id": "",
+                "return_to": "/log?peptide=SS-31",
+                "peptide_name": "SS-31",
+                "peptide_name_other": "",
+                "logged_at": "2026-05-03T21:00",
+                "actual_dose_amount": "1.5",
+                "site": "Left Thigh",
+                "notes": "second same-day dose",
+            },
+        )
+
         settings = client.get("/settings")
-        require(settings, "App version v1.7")
+        require(settings, "App version v1.8")
 
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")
         require(calendar, "May 2026")
         require(calendar, "SS-31")
         require(calendar, "--peptide-color: #111111")
+        require(calendar, "6 mg")
+        require(calendar, "1.5 mg")
         require(calendar, "Add dose")
         require(calendar, "Logged this day")
 
@@ -324,7 +340,7 @@ def main() -> int:
         client.post(
             "/logs/save",
             {
-                "log_id": "3",
+                "log_id": "4",
                 "return_to": "/calendar?month=2026-05&date=2026-05-04",
                 "peptide_name": "Retatrutide",
                 "peptide_name_other": "",
@@ -340,7 +356,7 @@ def main() -> int:
         client.post(
             "/logs/delete",
             {
-                "log_id": "3",
+                "log_id": "4",
                 "return_to": "/calendar?month=2026-05&date=2026-05-04",
             },
         )

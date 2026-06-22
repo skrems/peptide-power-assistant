@@ -14,7 +14,7 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Published protocol activation for users.
 - Today view showing protocol day, dose due, rest days, and completion state.
 - Dose log with protocol and manual entries, peptide filtering, edit, and delete.
-- Calendar view with peptide colors and day-level add, edit, and delete.
+- Calendar view with peptide colors, per-dose amounts, and day-level add, edit, and delete.
 - Daily check-in notes.
 - Admin-only SQLite backup export.
 - Public link to the separate Peptide Protocol Library.
@@ -160,7 +160,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.7
+ghcr.io/skrems/peptide-power-assistant:v1.8
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -199,7 +199,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.7
+    image: ghcr.io/skrems/peptide-power-assistant:v1.8
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
