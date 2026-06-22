@@ -488,11 +488,31 @@ button.text {
   text-decoration: none;
 }
 
-.calendar-dose span {
-  display: block;
+.calendar-dose-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.calendar-dose-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-dose strong {
+  flex: 0 0 auto;
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent-dark);
+  padding: 2px 6px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
