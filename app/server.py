@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.10"
+APP_VERSION = "v1.11"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -208,6 +208,26 @@ def init_db() -> None:
               site TEXT,
               notes TEXT,
               logged_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS dose_audit_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              event_type TEXT NOT NULL CHECK (event_type IN ('attempt', 'success', 'error')),
+              action TEXT NOT NULL,
+              user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+              path TEXT NOT NULL,
+              log_id INTEGER,
+              peptide_name TEXT,
+              actual_dose_amount REAL,
+              dose_unit TEXT NOT NULL DEFAULT 'mg',
+              site TEXT,
+              logged_at TEXT,
+              return_to TEXT,
+              client_ip TEXT,
+              user_agent TEXT,
+              error TEXT,
+              payload_json TEXT,
+              created_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS daily_checkins (
@@ -896,6 +916,37 @@ def safe_return_to(value: str | None, fallback: str = "/log") -> str:
     if parsed.scheme or parsed.netloc or not raw.startswith("/") or raw.startswith("//"):
         return fallback
     return raw
+
+
+def dose_audit_payload(data: dict[str, str]) -> str:
+    allowed = {
+        "actual_dose_amount",
+        "dose_unit",
+        "enrollment_id",
+        "log_id",
+        "logged_at",
+        "peptide_name",
+        "protocol_day",
+        "return_to",
+        "site",
+        "step_id",
+    }
+    payload = {key: data.get(key, "") for key in sorted(allowed) if key in data}
+    return json.dumps(payload, sort_keys=True)
+
+
+def dose_action_for_path(path: str, data: dict[str, str]) -> str:
+    if path == "/log/protocol":
+        return "protocol_create"
+    if path == "/logs/delete":
+        return "delete"
+    if path == "/log/manual":
+        return "manual_create"
+    if path == "/logs/save" and data.get("log_id"):
+        return "manual_update"
+    if path == "/logs/save":
+        return "manual_create"
+    return "dose_action"
 
 
 def current_path(path: str, params: dict[str, list[str]], exclude: set[str] | None = None) -> str:
@@ -1688,6 +1739,45 @@ def render_settings(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
         "logs": one(conn, "SELECT count(*) c FROM dose_logs WHERE user_id = ?", (ctx.user["id"],))["c"],
         "checkins": one(conn, "SELECT count(*) c FROM daily_checkins WHERE user_id = ?", (ctx.user["id"],))["c"],
     }
+    audit_where = ""
+    audit_args: tuple[Any, ...] = ()
+    if ctx.user["role"] != "admin":
+        audit_where = "WHERE e.user_id = ?"
+        audit_args = (ctx.user["id"],)
+    audit_rows = query(
+        conn,
+        f"""
+        SELECT e.*, u.display_name
+        FROM dose_audit_events e
+        LEFT JOIN users u ON u.id = e.user_id
+        {audit_where}
+        ORDER BY e.created_at DESC, e.id DESC
+        LIMIT 50
+        """,
+        audit_args,
+    )
+    def audit_card(row: sqlite3.Row) -> str:
+        error_html = f'<p class="meta">Error: {h(row["error"])}</p>' if row["error"] else ""
+        return f"""
+        <article class="item">
+          <div class="item-title">
+            <div>
+              <h3>{h(row['event_type'].title())}: {h(row['action'].replace('_', ' '))}</h3>
+              <p class="meta">{h(row['created_at'])} · {h(row['display_name'] or 'Unknown user')} · {h(row['client_ip'] or 'unknown client')}</p>
+            </div>
+            <span class="badge {'warn' if row['event_type'] == 'error' else ''}">{h(row['event_type'])}</span>
+          </div>
+          <p class="meta">
+            {h(row['peptide_name'] or 'No peptide')} · {format_dose(row['actual_dose_amount']) if row['actual_dose_amount'] is not None else 'n/a'} {h(row['dose_unit'] or 'mg')}
+            · logged_at {h(row['logged_at'] or 'n/a')} · log id {h(row['log_id'] or 'n/a')}
+          </p>
+          <p class="meta">{h(row['path'])} → {h(row['return_to'] or 'n/a')}</p>
+          {error_html}
+          <p class="meta">{h((row['user_agent'] or '')[:180])}</p>
+        </article>
+        """
+
+    audit_html = "".join(audit_card(row) for row in audit_rows) or '<div class="empty">No dose audit events yet. New dose attempts, saves, errors, and deletes will appear here.</div>'
     body = f"""
     <section class="panel">
       <div class="panel-head"><h2>Data</h2></div>
@@ -1701,6 +1791,15 @@ def render_settings(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     <section class="panel">
       <h2>Install on iPhone</h2>
       <p class="meta">Open this site in Safari, tap Share, then Add to Home Screen.</p>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Recent Dose Audit</h2>
+          <p class="meta">Newest 50 dose attempts, saves, deletes, and errors. Admins see all users.</p>
+        </div>
+      </div>
+      <div class="card-list">{audit_html}</div>
     </section>
     <section class="panel">
       <h2>About</h2>
@@ -1779,26 +1878,20 @@ class App(BaseHTTPRequestHandler):
         if parsed.path == "/logout":
             return self.logout()
 
+        dose_paths = {"/log/protocol", "/logs/save", "/logs/delete", "/log/manual"}
         ctx = self.context()
         if not ctx.user:
+            if parsed.path in dose_paths:
+                self.record_dose_audit("error", "unauthenticated", None, parsed.path, data, error="No active session; redirected to login.")
             return self.redirect("/login")
+
+        if parsed.path in dose_paths:
+            return self.handle_dose_post(parsed.path, ctx.user["id"], data)
 
         with db() as conn:
             if parsed.path == "/checkin":
                 self.save_checkin(conn, ctx.user["id"], data)
                 return self.redirect(with_flash("/", "Check-in saved"))
-            if parsed.path == "/log/protocol":
-                self.log_protocol(conn, ctx.user["id"], data)
-                return self.redirect(with_flash("/", "Dose logged"))
-            if parsed.path == "/logs/save":
-                self.save_dose_log(conn, ctx.user["id"], data)
-                return self.redirect(with_flash(safe_return_to(data.get("return_to")), "Dose saved"))
-            if parsed.path == "/logs/delete":
-                self.delete_dose_log(conn, ctx.user["id"], data)
-                return self.redirect(with_flash(safe_return_to(data.get("return_to")), "Dose deleted"))
-            if parsed.path == "/log/manual":
-                self.save_dose_log(conn, ctx.user["id"], data)
-                return self.redirect(with_flash("/log", "Manual dose logged"))
             if parsed.path == "/protocols/save":
                 self.require_admin(ctx)
                 protocol_id = self.save_protocol(conn, ctx.user["id"], data)
@@ -1884,6 +1977,89 @@ class App(BaseHTTPRequestHandler):
         parsed = urllib.parse.parse_qs(raw, keep_blank_values=True)
         return {key: ",".join(values) if len(values) > 1 else values[-1] for key, values in parsed.items()}
 
+    def handle_dose_post(self, path: str, user_id: int, data: dict[str, str]) -> None:
+        action = dose_action_for_path(path, data)
+        self.record_dose_audit("attempt", action, user_id, path, data)
+        try:
+            with db() as conn:
+                if path == "/log/protocol":
+                    result = self.log_protocol(conn, user_id, data)
+                    redirect_to = with_flash("/", "Dose logged")
+                elif path == "/logs/save":
+                    result = self.save_dose_log(conn, user_id, data)
+                    redirect_to = with_flash(safe_return_to(data.get("return_to")), "Dose saved")
+                elif path == "/logs/delete":
+                    result = self.delete_dose_log(conn, user_id, data)
+                    redirect_to = with_flash(safe_return_to(data.get("return_to")), "Dose deleted")
+                elif path == "/log/manual":
+                    result = self.save_dose_log(conn, user_id, data)
+                    redirect_to = with_flash("/log", "Manual dose logged")
+                else:
+                    raise ValueError("Dose action not found.")
+            self.record_dose_audit("success", action, user_id, path, data, result=result)
+            return self.redirect(redirect_to)
+        except Exception as exc:
+            self.record_dose_audit("error", action, user_id, path, data, error=str(exc))
+            raise
+
+    def record_dose_audit(
+        self,
+        event_type: str,
+        action: str,
+        user_id: int | None,
+        path: str,
+        data: dict[str, str],
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        result = result or {}
+        peptide_name = result.get("peptide_name") or peptide_name_from_form(data) or None
+        amount = result.get("actual_dose_amount")
+        if amount is None and data.get("actual_dose_amount"):
+            try:
+                amount = parse_dose_mg(data.get("actual_dose_amount", ""), "Actual dose")
+            except ValueError:
+                amount = None
+        log_id = result.get("log_id") or int_or_default(data.get("log_id"), 0) or None
+        logged_at = result.get("logged_at") or data.get("logged_at") or None
+        site = result.get("site") or data.get("site", "").strip() or None
+        return_to = data.get("return_to") or None
+        client_ip = self.client_address[0] if self.client_address else ""
+        user_agent = self.headers.get("User-Agent", "")
+        try:
+            with db() as audit_conn:
+                audit_conn.execute(
+                    """
+                    INSERT INTO dose_audit_events
+                      (event_type, action, user_id, path, log_id, peptide_name, actual_dose_amount,
+                       dose_unit, site, logged_at, return_to, client_ip, user_agent, error, payload_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'mg', ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_type,
+                        action,
+                        user_id,
+                        path,
+                        log_id,
+                        peptide_name,
+                        amount,
+                        site,
+                        logged_at,
+                        return_to,
+                        client_ip,
+                        user_agent,
+                        error,
+                        dose_audit_payload(data),
+                        now_iso(),
+                    ),
+                )
+            detail = f"{event_type} {action} user={user_id or 'none'} peptide={peptide_name or 'n/a'} log_id={log_id or 'n/a'} logged_at={logged_at or 'n/a'}"
+            if error:
+                detail = f"{detail} error={error}"
+            sys.stderr.write(f"dose_audit {detail}\n")
+        except Exception as audit_exc:
+            sys.stderr.write(f"dose_audit failed: {audit_exc}\n")
+
     def login(self, data: dict[str, str]) -> None:
         email = data.get("email", "").strip().lower()
         password = data.get("password", "")
@@ -1937,7 +2113,7 @@ class App(BaseHTTPRequestHandler):
             ),
         )
 
-    def log_protocol(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+    def log_protocol(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> dict[str, Any]:
         enrollment = one(
             conn,
             """
@@ -1950,7 +2126,9 @@ class App(BaseHTTPRequestHandler):
         step = one(conn, "SELECT * FROM protocol_steps WHERE id = ?", (int(data["step_id"]),))
         if not enrollment or not step:
             raise ValueError("Enrollment or step not found.")
-        conn.execute(
+        logged_at = now_iso()
+        actual_dose = parse_dose_mg(data["actual_dose_amount"], "Actual dose")
+        cursor = conn.execute(
             """
             INSERT INTO dose_logs
               (user_id, enrollment_id, protocol_id, protocol_step_id, protocol_day, source, peptide_name,
@@ -1965,22 +2143,30 @@ class App(BaseHTTPRequestHandler):
                 int(data["protocol_day"]),
                 enrollment["peptide_name"],
                 step["dose_amount"],
-                parse_dose_mg(data["actual_dose_amount"], "Actual dose"),
+                actual_dose,
                 data.get("site", "").strip(),
                 data.get("notes", "").strip(),
-                now_iso(),
+                logged_at,
             ),
         )
+        return {
+            "log_id": cursor.lastrowid,
+            "peptide_name": enrollment["peptide_name"],
+            "actual_dose_amount": actual_dose,
+            "site": data.get("site", "").strip(),
+            "logged_at": logged_at,
+        }
 
-    def save_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+    def save_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> dict[str, Any]:
         peptide_name = peptide_name_from_form(data)
         if not peptide_name:
             raise ValueError("Choose or enter a peptide name.")
         logged_at = submitted_datetime_or_now(data.get("logged_at"))
         log_id = int(data.get("log_id") or 0)
+        actual_dose = parse_dose_mg(data["actual_dose_amount"], "Actual dose")
         values = (
             peptide_name,
-            parse_dose_mg(data["actual_dose_amount"], "Actual dose"),
+            actual_dose,
             data.get("site", "").strip(),
             data.get("notes", "").strip(),
             logged_at,
@@ -1996,8 +2182,14 @@ class App(BaseHTTPRequestHandler):
             )
             if cursor.rowcount != 1:
                 raise ValueError("Dose log not found.")
-            return
-        conn.execute(
+            return {
+                "log_id": log_id,
+                "peptide_name": peptide_name,
+                "actual_dose_amount": actual_dose,
+                "site": data.get("site", "").strip(),
+                "logged_at": logged_at,
+            }
+        cursor = conn.execute(
             """
             INSERT INTO dose_logs
               (user_id, source, peptide_name, actual_dose_amount, dose_unit, status, site, notes, logged_at)
@@ -2012,14 +2204,31 @@ class App(BaseHTTPRequestHandler):
                 logged_at,
             ),
         )
+        return {
+            "log_id": cursor.lastrowid,
+            "peptide_name": peptide_name,
+            "actual_dose_amount": actual_dose,
+            "site": data.get("site", "").strip(),
+            "logged_at": logged_at,
+        }
 
-    def delete_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+    def delete_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> dict[str, Any]:
         log_id = int(data.get("log_id") or 0)
         if not log_id:
+            raise ValueError("Dose log not found.")
+        row = one(conn, "SELECT * FROM dose_logs WHERE id = ? AND user_id = ?", (log_id, user_id))
+        if not row:
             raise ValueError("Dose log not found.")
         cursor = conn.execute("DELETE FROM dose_logs WHERE id = ? AND user_id = ?", (log_id, user_id))
         if cursor.rowcount != 1:
             raise ValueError("Dose log not found.")
+        return {
+            "log_id": log_id,
+            "peptide_name": row["peptide_name"],
+            "actual_dose_amount": row["actual_dose_amount"],
+            "site": row["site"],
+            "logged_at": row["logged_at"],
+        }
 
     def log_manual(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
         self.save_dose_log(conn, user_id, data)

@@ -16,7 +16,7 @@ git@github.com:skrems/peptide-power-assistant.git
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.10
+ghcr.io/skrems/peptide-power-assistant:v1.11
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS custom apps should use explicit `vX.Y` tags. Testing showed the dashboard does not reliably detect a changed digest under the same custom tag.
@@ -102,7 +102,7 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:v1.10
+image: ghcr.io/skrems/peptide-power-assistant:v1.11
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:
@@ -236,6 +236,7 @@ ssh <zimaboard-user>@<zimaboard-host> 'mkdir -p /DATA/AppData/peptide-power-assi
 - Seeded published protocols include GHK-Cu, Selank SK10, and Tesamorelin TSM10 user-provided cycles.
 - Today view for due protocol tasks.
 - Manual and protocol dose logging.
+- Dose audit trail in Settings for attempts, saves, deletes, errors, and expired-session redirects.
 - Dose log filtering by peptide.
 - Dose log edit/delete.
 - Calendar month view with peptide colors and individual dose amounts.

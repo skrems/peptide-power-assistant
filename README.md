@@ -14,6 +14,7 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Published protocol activation for users.
 - Today view showing protocol day, dose due, rest days, and completion state.
 - Dose log with protocol and manual entries, peptide filtering, edit, and delete.
+- Dose audit trail for attempts, successful saves, deletes, validation errors, and expired-session redirects.
 - Calendar view with peptide colors, per-dose amounts, and day-level add, edit, and delete.
 - Daily check-in notes.
 - Admin-only SQLite backup export.
@@ -160,7 +161,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.10
+ghcr.io/skrems/peptide-power-assistant:v1.11
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -199,7 +200,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.10
+    image: ghcr.io/skrems/peptide-power-assistant:v1.11
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
@@ -247,6 +248,8 @@ Check logs:
 sudo env DOCKER_CONFIG=/DATA/AppData/peptide-power-assistant/docker-config \
   docker logs peptide-power-assistant --tail 50
 ```
+
+Recent dose actions are also visible in the app under **Settings → Recent Dose Audit**. This shows the newest attempts, successful saves, deletes, errors, client IP, user agent, submitted dose date/time, and resulting log id.
 
 Then open:
 

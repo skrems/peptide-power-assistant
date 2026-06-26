@@ -307,7 +307,9 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.10")
+        require(settings, "App version v1.11")
+        require(settings, "Recent Dose Audit")
+        require(settings, "Success: manual create")
 
         calendar = client.get("/calendar?month=2026-05")
         require(calendar, "Calendar")
