@@ -91,6 +91,14 @@ def protocol_id(db_path: Path, name: str) -> str:
     return str(row[0])
 
 
+def user_id(db_path: Path, email: str) -> str:
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+    if not row:
+        raise AssertionError(f"user not found: {email}")
+    return str(row[0])
+
+
 def main() -> int:
     port = free_port()
     db_path = Path(tempfile.gettempdir()) / f"peptide-power-smoke-{port}.db"
@@ -307,7 +315,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.11")
+        require(settings, "App version v1.12")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
@@ -391,8 +399,54 @@ def main() -> int:
                 "role": "member",
             },
         )
+        member_id = user_id(db_path, "member@example.local")
+        admin_log = client.get("/log")
+        require(admin_log, "Log for")
+        require(admin_log, "Smoke Member (member@example.local)")
+        client.post(
+            "/logs/save",
+            {
+                "log_id": "",
+                "target_user_id": member_id,
+                "return_to": "/log",
+                "peptide_name": "GHK-Cu",
+                "peptide_name_other": "",
+                "logged_at": "2026-05-06T08:00",
+                "actual_dose_amount": "1",
+                "site": "Left Abdomen",
+                "notes": "admin entered for member",
+            },
+        )
+        member_history = client.get(f"/log?user_id={member_id}")
+        require(member_history, "admin entered for member")
+        require(member_history, "Logged for Smoke Member")
+
         member_client = Client(f"http://127.0.0.1:{port}")
         member_client.post("/login", {"email": "member@example.local", "password": "member-password"})
+        member_log = member_client.get("/log")
+        require(member_log, "admin entered for member")
+        if "Log for" in member_log:
+            raise AssertionError("member account was shown the admin user selector")
+        member_client.post(
+            "/logs/save",
+            {
+                "log_id": "",
+                "target_user_id": user_id(db_path, ADMIN_EMAIL),
+                "return_to": "/log",
+                "peptide_name": "SS-31",
+                "peptide_name_other": "",
+                "logged_at": "2026-05-07T08:00",
+                "actual_dose_amount": "1",
+                "site": "Right Thigh",
+                "notes": "member ownership guard",
+            },
+        )
+        with sqlite3.connect(db_path) as conn:
+            owner = conn.execute(
+                "SELECT user_id FROM dose_logs WHERE notes = 'member ownership guard'",
+            ).fetchone()
+        if not owner or str(owner[0]) != member_id:
+            raise AssertionError("member was able to assign a dose to another user")
         try:
             member_client.get_bytes("/backup")
         except urllib.error.HTTPError as exc:

@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.11"
+APP_VERSION = "v1.12"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -214,6 +214,7 @@ def init_db() -> None:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               event_type TEXT NOT NULL CHECK (event_type IN ('attempt', 'success', 'error')),
               action TEXT NOT NULL,
+              actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
               user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
               path TEXT NOT NULL,
               log_id INTEGER,
@@ -248,6 +249,7 @@ def init_db() -> None:
         )
         migrate_protocol_steps(conn)
         migrate_peptides(conn)
+        migrate_dose_audit_events(conn)
         seed_admin(conn)
         seed_peptides(conn)
         seed_ghk_protocol(conn)
@@ -330,6 +332,12 @@ def migrate_peptides(conn: sqlite3.Connection) -> None:
             "UPDATE peptides SET color = ? WHERE lower(name) = ? AND (color IS NULL OR color = '' OR color = '#60706a')",
             (color, peptide_key),
         )
+
+
+def migrate_dose_audit_events(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(dose_audit_events)").fetchall()}
+    if "actor_user_id" not in columns:
+        conn.execute("ALTER TABLE dose_audit_events ADD COLUMN actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
 
 
 def seed_admin(conn: sqlite3.Connection) -> None:
@@ -930,6 +938,7 @@ def dose_audit_payload(data: dict[str, str]) -> str:
         "return_to",
         "site",
         "step_id",
+        "target_user_id",
     }
     payload = {key: data.get(key, "") for key in sorted(allowed) if key in data}
     return json.dumps(payload, sort_keys=True)
@@ -977,6 +986,8 @@ def log_form(
     conn: sqlite3.Connection,
     row: sqlite3.Row | None = None,
     *,
+    actor_user: sqlite3.Row | None = None,
+    target_user_id: int | None = None,
     return_to: str = "/log",
     default_logged_at: str | None = None,
     button_label: str = "Save dose",
@@ -987,11 +998,26 @@ def log_form(
     site = row["site"] if row else ""
     notes = row["notes"] if row else ""
     logged_at = row["logged_at"] if row else default_logged_at
+    owner_id = int(row["user_id"]) if row else int(target_user_id or (actor_user["id"] if actor_user else 0))
+    owner_field = ""
+    if actor_user and actor_user["role"] == "admin":
+        if row:
+            owner = one(conn, "SELECT display_name, email FROM users WHERE id = ?", (owner_id,))
+            owner_label = owner["display_name"] if owner else "Unknown user"
+            owner_field = f'<label>Log for <input value="{h(owner_label)}" disabled><input type="hidden" name="target_user_id" value="{owner_id}"></label>'
+        else:
+            options = []
+            for user in query(conn, "SELECT id, display_name, email FROM users WHERE active = 1 ORDER BY display_name, email"):
+                label = f"{user['display_name']} ({user['email']})"
+                selected = " selected" if int(user["id"]) == owner_id else ""
+                options.append(f'<option value="{user["id"]}"{selected}>{h(label)}</option>')
+            owner_field = f'<label>Log for <select name="target_user_id">{"".join(options)}</select></label>'
     return f"""
     <form method="post" action="/logs/save" class="stack">
       <input type="hidden" name="log_id" value="{log_id}">
       <input type="hidden" name="return_to" value="{h(return_to)}">
       {logged_at_picker(logged_at)}
+      {owner_field}
       <div class="grid three">
         <label>Peptide
           <select name="peptide_name">
@@ -1407,6 +1433,12 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection, params: dict[str, 
     colors = peptide_colors(conn)
     selected_peptide = params.get("peptide", [""])[0].strip()
     edit_id = int_or_default(params.get("edit", ["0"])[0], 0)
+    selected_user_id = ctx.user["id"]
+    if ctx.user["role"] == "admin":
+        requested_user_id = int_or_default(params.get("user_id", [str(ctx.user["id"])])[0], ctx.user["id"])
+        requested_user = one(conn, "SELECT id FROM users WHERE id = ? AND active = 1", (requested_user_id,))
+        if requested_user:
+            selected_user_id = requested_user["id"]
     return_to = current_path("/log", params, {"edit"})
     filter_options = ['<option value="">All peptides</option>']
     peptide_names = [row["name"] for row in query(conn, "SELECT name FROM peptides ORDER BY name")]
@@ -1415,28 +1447,36 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection, params: dict[str, 
     for name in peptide_names:
         filter_options.append(f'<option value="{h(name)}" {"selected" if name == selected_peptide else ""}>{h(name)}</option>')
 
-    where = "WHERE user_id = ?"
-    args: list[Any] = [ctx.user["id"]]
+    where = "WHERE d.user_id = ?"
+    args: list[Any] = [selected_user_id]
     if selected_peptide:
-        where += " AND peptide_name = ?"
+        where += " AND d.peptide_name = ?"
         args.append(selected_peptide)
     logs = query(
         conn,
-        f"SELECT * FROM dose_logs {where} ORDER BY logged_at DESC LIMIT 100",
+        f"SELECT d.*, u.display_name AS owner_name FROM dose_logs d JOIN users u ON u.id = d.user_id {where} ORDER BY d.logged_at DESC LIMIT 100",
         tuple(args),
     )
     log_html = "".join(
-        log_edit_card(conn, row, colors, return_to) if row["id"] == edit_id else log_summary_card(row, colors, return_to)
+        log_edit_card(conn, row, colors, return_to, ctx.user) if row["id"] == edit_id else log_summary_card(row, colors, return_to, ctx.user)
         for row in logs
     ) or '<div class="empty">No dose logs match this filter.</div>'
+    user_filter = ""
+    if ctx.user["role"] == "admin":
+        user_options = []
+        for user in query(conn, "SELECT id, display_name, email FROM users WHERE active = 1 ORDER BY display_name, email"):
+            selected = " selected" if int(user["id"]) == int(selected_user_id) else ""
+            user_options.append(f'<option value="{user["id"]}"{selected}>{h(user["display_name"])} ({h(user["email"])})</option>')
+        user_filter = f'<label>User <select name="user_id">{"".join(user_options)}</select></label>'
     body = f"""
     <section class="panel">
       <div class="panel-head"><h2>Manual dose</h2></div>
-      {log_form(conn, return_to=return_to, button_label="Log manual dose")}
+      {log_form(conn, actor_user=ctx.user, target_user_id=selected_user_id, return_to=return_to, button_label="Log manual dose")}
     </section>
     <section class="panel">
       <div class="panel-head"><h2>Dose history</h2></div>
       <form method="get" action="/log" class="filter-bar">
+        {user_filter}
         <label>Filter by peptide
           <select name="peptide">
             {"".join(filter_options)}
@@ -1453,17 +1493,20 @@ def render_log(ctx: RequestContext, conn: sqlite3.Connection, params: dict[str, 
     return layout(ctx, "/log", "Log", body)
 
 
-def log_summary_card(row: sqlite3.Row, colors: dict[str, str], return_to: str) -> str:
+def log_summary_card(row: sqlite3.Row, colors: dict[str, str], return_to: str, actor_user: sqlite3.Row) -> str:
     parsed = urllib.parse.urlparse(return_to)
     params = urllib.parse.parse_qs(parsed.query)
     edit_params = {"edit": row["id"]}
     if params.get("peptide", [""])[0]:
         edit_params["peptide"] = params["peptide"][0]
+    if params.get("user_id", [""])[0]:
+        edit_params["user_id"] = params["user_id"][0]
     edit_href = f"/log?{urllib.parse.urlencode(edit_params)}"
     return f"""
     <article class="item">
       <div class="item-title"><h3>{peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
       <p class="meta">{h(row['logged_at'])} · {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</p>
+      {f'<p class="meta">Logged for {h(row["owner_name"])}</p>' if actor_user['role'] == 'admin' else ''}
       <p class="meta">{'protocol day ' + str(row['protocol_day']) if row['protocol_day'] else ''} {h(row['site'])}</p>
       <p>{h(row['notes'])}</p>
       <div class="button-row compact">
@@ -1478,11 +1521,11 @@ def log_summary_card(row: sqlite3.Row, colors: dict[str, str], return_to: str) -
     """
 
 
-def log_edit_card(conn: sqlite3.Connection, row: sqlite3.Row, colors: dict[str, str], return_to: str) -> str:
+def log_edit_card(conn: sqlite3.Connection, row: sqlite3.Row, colors: dict[str, str], return_to: str, actor_user: sqlite3.Row) -> str:
     return f"""
     <article class="item edit-item">
       <div class="item-title"><h3>Edit {peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
-      {log_form(conn, row, return_to=return_to, button_label="Save dose")}
+      {log_form(conn, row, actor_user=actor_user, target_user_id=row['user_id'], return_to=return_to, button_label="Save dose")}
       <div class="button-row compact">
         <a class="button secondary" href="{h(return_to)}">Cancel</a>
         <form class="inline-form" method="post" action="/logs/delete" onsubmit="return confirm('Delete this dose log?');">
@@ -1747,9 +1790,10 @@ def render_settings(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
     audit_rows = query(
         conn,
         f"""
-        SELECT e.*, u.display_name
+        SELECT e.*, u.display_name, actor.display_name AS actor_name
         FROM dose_audit_events e
         LEFT JOIN users u ON u.id = e.user_id
+        LEFT JOIN users actor ON actor.id = e.actor_user_id
         {audit_where}
         ORDER BY e.created_at DESC, e.id DESC
         LIMIT 50
@@ -1763,7 +1807,7 @@ def render_settings(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
           <div class="item-title">
             <div>
               <h3>{h(row['event_type'].title())}: {h(row['action'].replace('_', ' '))}</h3>
-              <p class="meta">{h(row['created_at'])} · {h(row['display_name'] or 'Unknown user')} · {h(row['client_ip'] or 'unknown client')}</p>
+              <p class="meta">{h(row['created_at'])} · for {h(row['display_name'] or 'Unknown user')} · entered by {h(row['actor_name'] or row['display_name'] or 'Unknown user')} · {h(row['client_ip'] or 'unknown client')}</p>
             </div>
             <span class="badge {'warn' if row['event_type'] == 'error' else ''}">{h(row['event_type'])}</span>
           </div>
@@ -1882,11 +1926,11 @@ class App(BaseHTTPRequestHandler):
         ctx = self.context()
         if not ctx.user:
             if parsed.path in dose_paths:
-                self.record_dose_audit("error", "unauthenticated", None, parsed.path, data, error="No active session; redirected to login.")
+                self.record_dose_audit("error", "unauthenticated", None, None, parsed.path, data, error="No active session; redirected to login.")
             return self.redirect("/login")
 
         if parsed.path in dose_paths:
-            return self.handle_dose_post(parsed.path, ctx.user["id"], data)
+            return self.handle_dose_post(parsed.path, ctx.user, data)
 
         with db() as conn:
             if parsed.path == "/checkin":
@@ -1977,35 +2021,61 @@ class App(BaseHTTPRequestHandler):
         parsed = urllib.parse.parse_qs(raw, keep_blank_values=True)
         return {key: ",".join(values) if len(values) > 1 else values[-1] for key, values in parsed.items()}
 
-    def handle_dose_post(self, path: str, user_id: int, data: dict[str, str]) -> None:
+    def handle_dose_post(self, path: str, actor_user: sqlite3.Row, data: dict[str, str]) -> None:
         action = dose_action_for_path(path, data)
-        self.record_dose_audit("attempt", action, user_id, path, data)
+        actor_user_id = int(actor_user["id"])
+        target_user_id = actor_user_id
         try:
             with db() as conn:
+                target_user_id = self.dose_target_user_id(conn, actor_user, path, data)
+            self.record_dose_audit("attempt", action, actor_user_id, target_user_id, path, data)
+            with db() as conn:
                 if path == "/log/protocol":
-                    result = self.log_protocol(conn, user_id, data)
+                    result = self.log_protocol(conn, actor_user_id, data)
                     redirect_to = with_flash("/", "Dose logged")
                 elif path == "/logs/save":
-                    result = self.save_dose_log(conn, user_id, data)
-                    redirect_to = with_flash(safe_return_to(data.get("return_to")), "Dose saved")
+                    result = self.save_dose_log(conn, actor_user, target_user_id, data)
+                    return_to = safe_return_to(data.get("return_to"))
+                    if actor_user["role"] == "admin" and not data.get("log_id") and return_to == "/log":
+                        return_to = f"/log?user_id={target_user_id}"
+                    redirect_to = with_flash(return_to, "Dose saved")
                 elif path == "/logs/delete":
-                    result = self.delete_dose_log(conn, user_id, data)
+                    result = self.delete_dose_log(conn, actor_user, data)
                     redirect_to = with_flash(safe_return_to(data.get("return_to")), "Dose deleted")
                 elif path == "/log/manual":
-                    result = self.save_dose_log(conn, user_id, data)
+                    result = self.save_dose_log(conn, actor_user, target_user_id, data)
                     redirect_to = with_flash("/log", "Manual dose logged")
                 else:
                     raise ValueError("Dose action not found.")
-            self.record_dose_audit("success", action, user_id, path, data, result=result)
+            self.record_dose_audit("success", action, actor_user_id, int(result.get("user_id", target_user_id)), path, data, result=result)
             return self.redirect(redirect_to)
         except Exception as exc:
-            self.record_dose_audit("error", action, user_id, path, data, error=str(exc))
+            self.record_dose_audit("error", action, actor_user_id, target_user_id, path, data, error=str(exc))
             raise
+
+    def dose_target_user_id(self, conn: sqlite3.Connection, actor_user: sqlite3.Row, path: str, data: dict[str, str]) -> int:
+        actor_user_id = int(actor_user["id"])
+        log_id = int_or_default(data.get("log_id"), 0)
+        if log_id and path in {"/logs/save", "/logs/delete"}:
+            log = one(conn, "SELECT user_id FROM dose_logs WHERE id = ?", (log_id,))
+            if not log:
+                raise ValueError("Dose log not found.")
+            if actor_user["role"] != "admin" and int(log["user_id"]) != actor_user_id:
+                raise ValueError("Dose log not found.")
+            return int(log["user_id"])
+        if path != "/logs/save" or actor_user["role"] != "admin":
+            return actor_user_id
+        requested_user_id = int_or_default(data.get("target_user_id"), actor_user_id)
+        target = one(conn, "SELECT id FROM users WHERE id = ? AND active = 1", (requested_user_id,))
+        if not target:
+            raise ValueError("Selected user is not available.")
+        return int(target["id"])
 
     def record_dose_audit(
         self,
         event_type: str,
         action: str,
+        actor_user_id: int | None,
         user_id: int | None,
         path: str,
         data: dict[str, str],
@@ -2031,13 +2101,14 @@ class App(BaseHTTPRequestHandler):
                 audit_conn.execute(
                     """
                     INSERT INTO dose_audit_events
-                      (event_type, action, user_id, path, log_id, peptide_name, actual_dose_amount,
+                      (event_type, action, actor_user_id, user_id, path, log_id, peptide_name, actual_dose_amount,
                        dose_unit, site, logged_at, return_to, client_ip, user_agent, error, payload_json, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'mg', ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'mg', ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         event_type,
                         action,
+                        actor_user_id,
                         user_id,
                         path,
                         log_id,
@@ -2053,7 +2124,7 @@ class App(BaseHTTPRequestHandler):
                         now_iso(),
                     ),
                 )
-            detail = f"{event_type} {action} user={user_id or 'none'} peptide={peptide_name or 'n/a'} log_id={log_id or 'n/a'} logged_at={logged_at or 'n/a'}"
+            detail = f"{event_type} {action} actor={actor_user_id or 'none'} user={user_id or 'none'} peptide={peptide_name or 'n/a'} log_id={log_id or 'n/a'} logged_at={logged_at or 'n/a'}"
             if error:
                 detail = f"{detail} error={error}"
             sys.stderr.write(f"dose_audit {detail}\n")
@@ -2151,13 +2222,14 @@ class App(BaseHTTPRequestHandler):
         )
         return {
             "log_id": cursor.lastrowid,
+            "user_id": user_id,
             "peptide_name": enrollment["peptide_name"],
             "actual_dose_amount": actual_dose,
             "site": data.get("site", "").strip(),
             "logged_at": logged_at,
         }
 
-    def save_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> dict[str, Any]:
+    def save_dose_log(self, conn: sqlite3.Connection, actor_user: sqlite3.Row, target_user_id: int, data: dict[str, str]) -> dict[str, Any]:
         peptide_name = peptide_name_from_form(data)
         if not peptide_name:
             raise ValueError("Choose or enter a peptide name.")
@@ -2172,18 +2244,23 @@ class App(BaseHTTPRequestHandler):
             logged_at,
         )
         if log_id:
+            existing = one(conn, "SELECT user_id FROM dose_logs WHERE id = ?", (log_id,))
+            if not existing or (actor_user["role"] != "admin" and int(existing["user_id"]) != int(actor_user["id"])):
+                raise ValueError("Dose log not found.")
+            target_user_id = int(existing["user_id"])
             cursor = conn.execute(
                 """
                 UPDATE dose_logs
                 SET peptide_name = ?, actual_dose_amount = ?, site = ?, notes = ?, logged_at = ?
                 WHERE id = ? AND user_id = ?
                 """,
-                (*values, log_id, user_id),
+                (*values, log_id, target_user_id),
             )
             if cursor.rowcount != 1:
                 raise ValueError("Dose log not found.")
             return {
                 "log_id": log_id,
+                "user_id": target_user_id,
                 "peptide_name": peptide_name,
                 "actual_dose_amount": actual_dose,
                 "site": data.get("site", "").strip(),
@@ -2196,7 +2273,7 @@ class App(BaseHTTPRequestHandler):
             VALUES (?, 'manual', ?, ?, 'mg', 'completed', ?, ?, ?)
             """,
             (
-                user_id,
+                target_user_id,
                 peptide_name,
                 parse_dose_mg(data["actual_dose_amount"], "Actual dose"),
                 data.get("site", "").strip(),
@@ -2206,24 +2283,28 @@ class App(BaseHTTPRequestHandler):
         )
         return {
             "log_id": cursor.lastrowid,
+            "user_id": target_user_id,
             "peptide_name": peptide_name,
             "actual_dose_amount": actual_dose,
             "site": data.get("site", "").strip(),
             "logged_at": logged_at,
         }
 
-    def delete_dose_log(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> dict[str, Any]:
+    def delete_dose_log(self, conn: sqlite3.Connection, actor_user: sqlite3.Row, data: dict[str, str]) -> dict[str, Any]:
         log_id = int(data.get("log_id") or 0)
         if not log_id:
             raise ValueError("Dose log not found.")
-        row = one(conn, "SELECT * FROM dose_logs WHERE id = ? AND user_id = ?", (log_id, user_id))
+        row = one(conn, "SELECT * FROM dose_logs WHERE id = ?", (log_id,))
+        if row and actor_user["role"] != "admin" and int(row["user_id"]) != int(actor_user["id"]):
+            row = None
         if not row:
             raise ValueError("Dose log not found.")
-        cursor = conn.execute("DELETE FROM dose_logs WHERE id = ? AND user_id = ?", (log_id, user_id))
+        cursor = conn.execute("DELETE FROM dose_logs WHERE id = ? AND user_id = ?", (log_id, row["user_id"]))
         if cursor.rowcount != 1:
             raise ValueError("Dose log not found.")
         return {
             "log_id": log_id,
+            "user_id": row["user_id"],
             "peptide_name": row["peptide_name"],
             "actual_dose_amount": row["actual_dose_amount"],
             "site": row["site"],
@@ -2231,7 +2312,10 @@ class App(BaseHTTPRequestHandler):
         }
 
     def log_manual(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
-        self.save_dose_log(conn, user_id, data)
+        user = one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))
+        if not user:
+            raise ValueError("User not found.")
+        self.save_dose_log(conn, user, user_id, data)
 
     def save_protocol(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> int:
         protocol_id = int(data.get("protocol_id") or 0)
