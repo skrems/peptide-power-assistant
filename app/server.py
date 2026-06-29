@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.12"
+APP_VERSION = "v1.13"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -939,6 +939,7 @@ def dose_audit_payload(data: dict[str, str]) -> str:
         "site",
         "step_id",
         "target_user_id",
+        "target_date",
     }
     payload = {key: data.get(key, "") for key in sorted(allowed) if key in data}
     return json.dumps(payload, sort_keys=True)
@@ -949,6 +950,8 @@ def dose_action_for_path(path: str, data: dict[str, str]) -> str:
         return "protocol_create"
     if path == "/logs/delete":
         return "delete"
+    if path == "/logs/copy-previous-day":
+        return "copy_previous_day"
     if path == "/log/manual":
         return "manual_create"
     if path == "/logs/save" and data.get("log_id"):
@@ -1610,6 +1613,12 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         """,
         (ctx.user["id"], selected_iso),
     )
+    previous_date = selected_date - timedelta(days=1)
+    previous_count = one(
+        conn,
+        "SELECT count(*) AS count FROM dose_logs WHERE user_id = ? AND substr(logged_at, 1, 10) = ?",
+        (ctx.user["id"], previous_date.isoformat()),
+    )["count"]
     selected_log_html = "".join(
         calendar_log_edit_card(conn, row, colors, calendar_return, month_start, selected_iso)
         if row["id"] == edit_id
@@ -1635,7 +1644,14 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
       </div>
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>{h(selected_label)}</h2></div>
+      <div class="panel-head">
+        <h2>{h(selected_label)}</h2>
+        <form method="post" action="/logs/copy-previous-day" onsubmit="return confirm('Copy {previous_count} dose{'s' if previous_count != 1 else ''} from {h(previous_date.strftime('%B %-d') if sys.platform != 'win32' else previous_date.strftime('%B %#d'))} into this day?');">
+          <input type="hidden" name="target_date" value="{selected_iso}">
+          <input type="hidden" name="return_to" value="/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}">
+          <button class="secondary" type="submit" {'disabled' if previous_count == 0 else ''}>Copy previous day</button>
+        </form>
+      </div>
       <h3>Add dose</h3>
       {log_form(conn, return_to=f"/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}", default_logged_at=f"{selected_iso}T08:00", button_label="Add dose")}
       <div class="divider"></div>
@@ -1922,7 +1938,7 @@ class App(BaseHTTPRequestHandler):
         if parsed.path == "/logout":
             return self.logout()
 
-        dose_paths = {"/log/protocol", "/logs/save", "/logs/delete", "/log/manual"}
+        dose_paths = {"/log/protocol", "/logs/save", "/logs/delete", "/logs/copy-previous-day", "/log/manual"}
         ctx = self.context()
         if not ctx.user:
             if parsed.path in dose_paths:
@@ -2042,6 +2058,14 @@ class App(BaseHTTPRequestHandler):
                 elif path == "/logs/delete":
                     result = self.delete_dose_log(conn, actor_user, data)
                     redirect_to = with_flash(safe_return_to(data.get("return_to")), "Dose deleted")
+                elif path == "/logs/copy-previous-day":
+                    result = self.copy_previous_day(conn, actor_user_id, data)
+                    copied = int(result["copied_count"])
+                    skipped = int(result["skipped_count"])
+                    message = f"Copied {copied} dose{'s' if copied != 1 else ''} from the previous day"
+                    if skipped:
+                        message += f"; skipped {skipped} already present"
+                    redirect_to = with_flash(safe_return_to(data.get("return_to"), "/calendar"), message)
                 elif path == "/log/manual":
                     result = self.save_dose_log(conn, actor_user, target_user_id, data)
                     redirect_to = with_flash("/log", "Manual dose logged")
@@ -2070,6 +2094,73 @@ class App(BaseHTTPRequestHandler):
         if not target:
             raise ValueError("Selected user is not available.")
         return int(target["id"])
+
+    def copy_previous_day(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> dict[str, Any]:
+        try:
+            target_date = date.fromisoformat(data.get("target_date", ""))
+        except ValueError as exc:
+            raise ValueError("Choose a valid target date.") from exc
+        source_date = target_date - timedelta(days=1)
+        source_rows = query(
+            conn,
+            """
+            SELECT peptide_name, actual_dose_amount, dose_unit, site, notes, logged_at
+            FROM dose_logs
+            WHERE user_id = ? AND substr(logged_at, 1, 10) = ?
+            ORDER BY logged_at, id
+            """,
+            (user_id, source_date.isoformat()),
+        )
+        copied_count = 0
+        skipped_count = 0
+        for row in source_rows:
+            time_part = row["logged_at"][10:] if "T" in row["logged_at"] else "T08:00:00"
+            logged_at = f"{target_date.isoformat()}{time_part}"
+            duplicate = one(
+                conn,
+                """
+                SELECT id FROM dose_logs
+                WHERE user_id = ? AND peptide_name = ? AND actual_dose_amount = ?
+                  AND dose_unit = ? AND COALESCE(site, '') = ? AND COALESCE(notes, '') = ?
+                  AND logged_at = ?
+                LIMIT 1
+                """,
+                (
+                    user_id,
+                    row["peptide_name"],
+                    row["actual_dose_amount"],
+                    row["dose_unit"],
+                    row["site"] or "",
+                    row["notes"] or "",
+                    logged_at,
+                ),
+            )
+            if duplicate:
+                skipped_count += 1
+                continue
+            conn.execute(
+                """
+                INSERT INTO dose_logs
+                  (user_id, source, peptide_name, actual_dose_amount, dose_unit, status, site, notes, logged_at)
+                VALUES (?, 'manual', ?, ?, ?, 'completed', ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    row["peptide_name"],
+                    row["actual_dose_amount"],
+                    row["dose_unit"],
+                    row["site"] or "",
+                    row["notes"] or "",
+                    logged_at,
+                ),
+            )
+            copied_count += 1
+        return {
+            "user_id": user_id,
+            "logged_at": target_date.isoformat(),
+            "copied_count": copied_count,
+            "skipped_count": skipped_count,
+        }
 
     def record_dose_audit(
         self,

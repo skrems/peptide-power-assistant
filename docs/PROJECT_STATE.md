@@ -8,6 +8,8 @@ Peptide Power Assistant is a self-hosted Python/SQLite web app for dose logging,
 
 Admins can use the Log tab's user selector to enter, review, edit, and delete manual doses for another active user. Dose audit events retain separate actor and dose-owner identities. Standard users can only create and manage their own dose records.
 
+The Calendar day view can copy all doses from the preceding day into the selected date. Copied records retain dose details and time of day, are stored as editable manual entries, and skip exact matches already present on the target date.
+
 ## Repository
 
 ```text
@@ -18,7 +20,7 @@ git@github.com:skrems/peptide-power-assistant.git
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.12
+ghcr.io/skrems/peptide-power-assistant:v1.13
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS custom apps should use explicit `vX.Y` tags. Testing showed the dashboard does not reliably detect a changed digest under the same custom tag.
@@ -104,7 +106,7 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:v1.12
+image: ghcr.io/skrems/peptide-power-assistant:v1.13
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:

@@ -315,7 +315,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.12")
+        require(settings, "App version v1.13")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
@@ -327,6 +327,7 @@ def main() -> int:
         require(calendar, "6 mg")
         require(calendar, "1.5 mg")
         require(calendar, "Add dose")
+        require(calendar, "Copy previous day")
         require(calendar, "Logged this day")
 
         client.post(
@@ -373,6 +374,31 @@ def main() -> int:
         calendar_day = client.get("/calendar?month=2026-05&date=2026-05-04")
         if "calendar edited" in calendar_day:
             raise AssertionError("calendar delete did not remove the edited log")
+
+        copied = client.post(
+            "/logs/copy-previous-day",
+            {
+                "target_date": "2026-05-04",
+                "return_to": "/calendar?month=2026-05&date=2026-05-04",
+            },
+        )
+        require(copied, "Copied 2 doses from the previous day")
+        require(copied, "manual edited")
+        require(copied, "second same-day dose")
+        copied_again = client.post(
+            "/logs/copy-previous-day",
+            {
+                "target_date": "2026-05-04",
+                "return_to": "/calendar?month=2026-05&date=2026-05-04",
+            },
+        )
+        require(copied_again, "Copied 0 doses from the previous day; skipped 2 already present")
+        with sqlite3.connect(db_path) as conn:
+            copied_count = conn.execute(
+                "SELECT count(*) FROM dose_logs WHERE user_id = 1 AND substr(logged_at, 1, 10) = '2026-05-04'",
+            ).fetchone()[0]
+        if copied_count != 2:
+            raise AssertionError(f"copy previous day created {copied_count} rows, expected 2")
 
         admin = client.get("/admin")
         require(admin, "Peptides")

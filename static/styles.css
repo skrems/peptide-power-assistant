@@ -210,6 +210,11 @@ button.secondary,
   color: var(--accent-dark);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
 button.danger,
 .button.danger {
   background: var(--red-bg);
