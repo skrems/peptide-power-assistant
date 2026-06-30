@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.14"
+APP_VERSION = "v1.15"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -67,6 +67,11 @@ def now_iso() -> str:
 
 def now_datetime_local() -> str:
     return datetime.now(app_timezone()).replace(tzinfo=None, second=0, microsecond=0).isoformat(timespec="minutes")
+
+
+def datetime_local_for_date(on_date: date) -> str:
+    current_time = datetime.now(app_timezone()).strftime("%H:%M")
+    return f"{on_date.isoformat()}T{current_time}"
 
 
 def submitted_datetime_or_now(value: str | None) -> str:
@@ -1671,7 +1676,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         </div>
       </div>
       <h3>Add dose</h3>
-      {log_form(conn, return_to=f"/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}", default_logged_at=f"{selected_iso}T08:00", button_label="Add dose")}
+      {log_form(conn, return_to=f"/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}", default_logged_at=datetime_local_for_date(selected_date), button_label="Add dose")}
       <div class="divider"></div>
       <div class="panel-head"><h2>Logged this day</h2></div>
       <div class="card-list">{selected_log_html}</div>

@@ -12,7 +12,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import sqlite3
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -315,11 +317,13 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.14")
+        require(settings, "App version v1.15")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
+        expected_time_before = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%H:%M")
         calendar = client.get("/calendar?month=2026-05")
+        expected_time_after = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%H:%M")
         require(calendar, "Calendar")
         require(calendar, "May 2026")
         require(calendar, "SS-31")
@@ -330,6 +334,12 @@ def main() -> int:
         require(calendar, "Previous day AM")
         require(calendar, "Previous day PM")
         require(calendar, "Logged this day")
+        expected_values = {
+            f'value="2026-05-01T{expected_time_before}"',
+            f'value="2026-05-01T{expected_time_after}"',
+        }
+        if not any(value in calendar for value in expected_values):
+            raise AssertionError("calendar add form did not default to the current local time")
 
         client.post(
             "/logs/save",
@@ -413,6 +423,40 @@ def main() -> int:
             ).fetchone()[0]
         if copied_count != 2:
             raise AssertionError(f"copy previous day created {copied_count} rows, expected 2")
+
+        for peptide_name, logged_at in (("SS-31", "2026-05-08T11:59"), ("Semax", "2026-05-08T12:00")):
+            client.post(
+                "/logs/save",
+                {
+                    "log_id": "",
+                    "return_to": "/calendar?month=2026-05&date=2026-05-08",
+                    "peptide_name": peptide_name,
+                    "peptide_name_other": "",
+                    "logged_at": logged_at,
+                    "actual_dose_amount": "1",
+                    "site": "",
+                    "notes": "copy boundary test",
+                },
+            )
+        for period in ("am", "pm"):
+            client.post(
+                "/logs/copy-previous-day",
+                {
+                    "target_date": "2026-05-09",
+                    "copy_period": period,
+                    "return_to": "/calendar?month=2026-05&date=2026-05-09",
+                },
+            )
+        with sqlite3.connect(db_path) as conn:
+            boundary_rows = conn.execute(
+                """
+                SELECT peptide_name, logged_at FROM dose_logs
+                WHERE user_id = 1 AND notes = 'copy boundary test' AND substr(logged_at, 1, 10) = '2026-05-09'
+                ORDER BY peptide_name
+                """,
+            ).fetchall()
+        if boundary_rows != [("SS-31", "2026-05-09T08:00:00"), ("Semax", "2026-05-09T20:00:00")]:
+            raise AssertionError(f"AM/PM noon boundary was classified incorrectly: {boundary_rows}")
 
         admin = client.get("/admin")
         require(admin, "Peptides")

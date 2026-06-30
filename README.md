@@ -17,6 +17,7 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Admin entry of manual doses on behalf of another user; standard users remain limited to their own records.
 - Dose audit trail records both the person entering a dose and the user who owns it, plus attempts, successful saves, deletes, validation errors, and expired-session redirects.
 - Calendar view with peptide colors, per-dose amounts, and day-level add, edit, and delete.
+- New Calendar entries default to the current local time on the selected date; Morning and Night shortcuts remain available.
 - Separate calendar actions copy the preceding day's AM or PM doses into the selected day at 8:00 AM or 8:00 PM as editable manual entries, with duplicate protection.
 - Daily check-in notes.
 - Admin-only SQLite backup export.
@@ -163,7 +164,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.14
+ghcr.io/skrems/peptide-power-assistant:v1.15
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -202,7 +203,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.14
+    image: ghcr.io/skrems/peptide-power-assistant:v1.15
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:
