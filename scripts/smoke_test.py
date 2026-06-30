@@ -289,7 +289,7 @@ def main() -> int:
                 "return_to": "/log?peptide=SS-31",
                 "peptide_name": "SS-31",
                 "peptide_name_other": "",
-                "logged_at": "2026-05-03T20:00",
+                "logged_at": "2026-05-03T08:00",
                 "actual_dose_amount": "6",
                 "site": "Right Thigh",
                 "notes": "manual edited",
@@ -315,7 +315,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.13")
+        require(settings, "App version v1.14")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
@@ -327,7 +327,8 @@ def main() -> int:
         require(calendar, "6 mg")
         require(calendar, "1.5 mg")
         require(calendar, "Add dose")
-        require(calendar, "Copy previous day")
+        require(calendar, "Previous day AM")
+        require(calendar, "Previous day PM")
         require(calendar, "Logged this day")
 
         client.post(
@@ -375,24 +376,37 @@ def main() -> int:
         if "calendar edited" in calendar_day:
             raise AssertionError("calendar delete did not remove the edited log")
 
-        copied = client.post(
+        copied_am = client.post(
             "/logs/copy-previous-day",
             {
                 "target_date": "2026-05-04",
+                "copy_period": "am",
                 "return_to": "/calendar?month=2026-05&date=2026-05-04",
             },
         )
-        require(copied, "Copied 2 doses from the previous day")
-        require(copied, "manual edited")
-        require(copied, "second same-day dose")
-        copied_again = client.post(
+        require(copied_am, "Copied 1 AM dose from the previous day")
+        require(copied_am, "manual edited")
+        require(copied_am, "2026-05-04T08:00:00")
+        copied_pm = client.post(
             "/logs/copy-previous-day",
             {
                 "target_date": "2026-05-04",
+                "copy_period": "pm",
                 "return_to": "/calendar?month=2026-05&date=2026-05-04",
             },
         )
-        require(copied_again, "Copied 0 doses from the previous day; skipped 2 already present")
+        require(copied_pm, "Copied 1 PM dose from the previous day")
+        require(copied_pm, "second same-day dose")
+        require(copied_pm, "2026-05-04T20:00:00")
+        copied_pm_again = client.post(
+            "/logs/copy-previous-day",
+            {
+                "target_date": "2026-05-04",
+                "copy_period": "pm",
+                "return_to": "/calendar?month=2026-05&date=2026-05-04",
+            },
+        )
+        require(copied_pm_again, "Copied 0 PM doses from the previous day; skipped 1 already present")
         with sqlite3.connect(db_path) as conn:
             copied_count = conn.execute(
                 "SELECT count(*) FROM dose_logs WHERE user_id = 1 AND substr(logged_at, 1, 10) = '2026-05-04'",
