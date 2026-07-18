@@ -317,7 +317,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.15")
+        require(settings, "App version v1.16")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
@@ -327,6 +327,7 @@ def main() -> int:
         require(calendar, "Calendar")
         require(calendar, "May 2026")
         require(calendar, "SS-31")
+        require(calendar, "SS31")
         require(calendar, "--peptide-color: #111111")
         require(calendar, "6 mg")
         require(calendar, "1.5 mg")
@@ -356,6 +357,7 @@ def main() -> int:
         )
         calendar_day = client.get("/calendar?month=2026-05&date=2026-05-04")
         require(calendar_day, "Retatrutide")
+        require(calendar_day, "RETA")
         require(calendar_day, "calendar add")
         require(calendar_day, "--peptide-color: #8b0000")
         require(calendar_day, "Edit")

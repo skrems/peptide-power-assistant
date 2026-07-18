@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.15"
+APP_VERSION = "v1.16"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -119,6 +119,25 @@ DEFAULT_PEPTIDE_COLORS = {
     "bpc-157": "#0b5d2a",
     "tp-500": "#72b856",
     "tb-500": "#72b856",
+}
+
+
+PEPTIDE_SHORT_CODES = {
+    "bpc-157": "BPC",
+    "dsip": "DSIP",
+    "ghk-cu": "GHK",
+    "glow70": "G70",
+    "ipamorelin": "IPA",
+    "mots-c": "MOTS",
+    "retatrutide": "RETA",
+    "selank": "SEL",
+    "semax": "SMX",
+    "ss-31": "SS31",
+    "tb-500": "TB500",
+    "tesamorelin": "TESA",
+    "tirzepatide": "TIRZ",
+    "terzepitide": "TIRZ",
+    "tp-500": "TP500",
 }
 
 
@@ -714,6 +733,25 @@ def color_for_peptide(name: str | None, colors: dict[str, str]) -> str:
 
 def peptide_chip(name: str, color: str) -> str:
     return f'<span class="peptide-chip" style="--peptide-color: {h(normalize_color(color))}">{h(name)}</span>'
+
+
+def peptide_short_code(name: str | None) -> str:
+    raw = (name or "").strip()
+    if not raw:
+        return "UNK"
+    key = peptide_key(raw)
+    normalized_key = re.sub(r"[^a-z0-9]+", "-", key).strip("-")
+    compact_key = re.sub(r"[^a-z0-9]", "", key)
+    for candidate in (key, normalized_key, compact_key):
+        if candidate in PEPTIDE_SHORT_CODES:
+            return PEPTIDE_SHORT_CODES[candidate]
+    compact = re.sub(r"[^a-zA-Z0-9]", "", raw).upper()
+    if any(char.isdigit() for char in compact):
+        return compact[:5] or "UNK"
+    parts = [part for part in re.split(r"[^a-zA-Z0-9]+", raw) if part]
+    if len(parts) > 1:
+        return "".join(part[0] for part in parts).upper()[:5]
+    return compact[:5] or "UNK"
 
 
 def add_months(month_start: date, months: int) -> date:
@@ -1589,9 +1627,9 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
             day_href = f"/calendar?{urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': iso})}"
             chips = "".join(
                 f"""
-                <a class="calendar-dose" href="{h(day_href)}" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
+                <a class="calendar-dose" href="{h(day_href)}" title="{h(row['peptide_name'])}" aria-label="{h(row['peptide_name'])} {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
                   <span class="calendar-dose-line">
-                    <span class="calendar-dose-name">{h(row['peptide_name'])}</span>
+                    <span class="calendar-dose-name">{h(peptide_short_code(row['peptide_name']))}</span>
                     <strong>{format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}</strong>
                   </span>
                 </a>

@@ -22,7 +22,7 @@ git@github.com:skrems/peptide-power-assistant.git
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.15
+ghcr.io/skrems/peptide-power-assistant:v1.16
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags. ZimaOS custom apps should use explicit `vX.Y` tags. Testing showed the dashboard does not reliably detect a changed digest under the same custom tag.
@@ -108,7 +108,7 @@ The compose file uses:
 
 ```yaml
 name: peptide-power-assistant
-image: ghcr.io/skrems/peptide-power-assistant:v1.15
+image: ghcr.io/skrems/peptide-power-assistant:v1.16
 volumes:
   - /DATA/AppData/peptide-power-assistant/data:/data
 environment:
