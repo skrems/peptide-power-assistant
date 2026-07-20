@@ -164,7 +164,7 @@ The app database is stored at:
 The current Zimaboard deployment is pinned to:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.16
+ghcr.io/skrems/peptide-power-assistant:v1.17
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -203,7 +203,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.16
+    image: ghcr.io/skrems/peptide-power-assistant:v1.17
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:

@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.16"
+APP_VERSION = "v1.17"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -1588,6 +1588,16 @@ def log_edit_card(conn: sqlite3.Connection, row: sqlite3.Row, colors: dict[str, 
 def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[str, list[str]]) -> bytes:
     assert ctx.user
     colors = peptide_colors(conn)
+    selected_user_id = int(ctx.user["id"])
+    selected_user = ctx.user
+    user_query: dict[str, str] = {}
+    if ctx.user["role"] == "admin":
+        requested_user_id = int_or_default(params.get("user_id", [str(ctx.user["id"])])[0], ctx.user["id"])
+        requested_user = one(conn, "SELECT id, display_name, email FROM users WHERE id = ? AND active = 1", (requested_user_id,))
+        if requested_user:
+            selected_user_id = int(requested_user["id"])
+            selected_user = requested_user
+        user_query = {"user_id": str(selected_user_id)}
     month_start = month_from_params(params)
     next_month = add_months(month_start, 1)
     prev_month = add_months(month_start, -1)
@@ -1597,7 +1607,8 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         selected_date = month_start
     selected_iso = selected_date.isoformat()
     edit_id = int_or_default(params.get("edit", ["0"])[0], 0)
-    calendar_return = current_path("/calendar", params, {"edit"})
+    calendar_return_params = {"month": month_start.strftime("%Y-%m"), "date": selected_iso, **user_query}
+    calendar_return = f"/calendar?{urllib.parse.urlencode(calendar_return_params)}"
     rows = query(
         conn,
         """
@@ -1606,7 +1617,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         WHERE user_id = ? AND substr(logged_at, 1, 10) >= ? AND substr(logged_at, 1, 10) <= ?
         ORDER BY log_date, logged_at, id
         """,
-        (ctx.user["id"], month_start.isoformat(), month_end.isoformat()),
+        (selected_user_id, month_start.isoformat(), month_end.isoformat()),
     )
     by_day: dict[str, list[sqlite3.Row]] = {}
     seen_peptides: dict[str, str] = {}
@@ -1624,7 +1635,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
             outside = " outside" if day.month != month_start.month else ""
             today_class = " today" if iso == today_iso() else ""
             selected_class = " selected" if iso == selected_iso else ""
-            day_href = f"/calendar?{urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': iso})}"
+            day_href = f"/calendar?{urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': iso, **user_query})}"
             chips = "".join(
                 f"""
                 <a class="calendar-dose" href="{h(day_href)}" title="{h(row['peptide_name'])}" aria-label="{h(row['peptide_name'])} {format_dose(row['actual_dose_amount'])} {h(row['dose_unit'])}" style="--peptide-color: {h(color_for_peptide(row['peptide_name'], colors))}">
@@ -1655,7 +1666,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         WHERE user_id = ? AND substr(logged_at, 1, 10) = ?
         ORDER BY logged_at DESC, id DESC
         """,
-        (ctx.user["id"], selected_iso),
+        (selected_user_id, selected_iso),
     )
     previous_date = selected_date - timedelta(days=1)
     previous_counts = one(
@@ -1667,7 +1678,7 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
         FROM dose_logs
         WHERE user_id = ? AND substr(logged_at, 1, 10) = ?
         """,
-        (ctx.user["id"], previous_date.isoformat()),
+        (selected_user_id, previous_date.isoformat()),
     )
     am_count = int(previous_counts["am_count"] or 0)
     pm_count = int(previous_counts["pm_count"] or 0)
@@ -1679,16 +1690,35 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
     ) or '<div class="empty">No doses logged for this day.</div>'
     month_label = month_start.strftime("%B %Y")
     selected_label = selected_date.strftime("%A, %B %-d, %Y") if sys.platform != "win32" else selected_date.strftime("%A, %B %#d, %Y")
+    user_filter = ""
+    selected_user_label = selected_user["display_name"] if selected_user else ctx.user["display_name"]
+    if ctx.user["role"] == "admin":
+        user_options = []
+        for user in query(conn, "SELECT id, display_name, email FROM users WHERE active = 1 ORDER BY display_name, email"):
+            selected = " selected" if int(user["id"]) == int(selected_user_id) else ""
+            user_options.append(f'<option value="{user["id"]}"{selected}>{h(user["display_name"])} ({h(user["email"])})</option>')
+        user_filter = f"""
+        <form method="get" action="/calendar" class="calendar-user-filter">
+          <input type="hidden" name="month" value="{month_start.strftime('%Y-%m')}">
+          <input type="hidden" name="date" value="{selected_iso}">
+          <label>Calendar for <select name="user_id">{"".join(user_options)}</select></label>
+          <button class="secondary" type="submit">Show</button>
+        </form>
+        """
+    prev_href = f"/calendar?{urllib.parse.urlencode({'month': prev_month.strftime('%Y-%m'), **user_query})}"
+    today_href = f"/calendar?{urllib.parse.urlencode({'month': today_date().strftime('%Y-%m'), 'date': today_iso(), **user_query})}"
+    next_href = f"/calendar?{urllib.parse.urlencode({'month': next_month.strftime('%Y-%m'), **user_query})}"
     body = f"""
     <section class="panel">
       <div class="panel-head">
-        <div><p class="eyebrow">Dose calendar</p><h2>{h(month_label)}</h2></div>
+        <div><p class="eyebrow">Dose calendar</p><h2>{h(month_label)}</h2><p class="meta">Showing {h(selected_user_label)}</p></div>
         <div class="button-row compact">
-          <a class="button secondary" href="/calendar?month={prev_month.strftime('%Y-%m')}">Previous</a>
-          <a class="button secondary" href="/calendar?month={today_date().strftime('%Y-%m')}">Today</a>
-          <a class="button secondary" href="/calendar?month={next_month.strftime('%Y-%m')}">Next</a>
+          <a class="button secondary" href="{h(prev_href)}">Previous</a>
+          <a class="button secondary" href="{h(today_href)}">Today</a>
+          <a class="button secondary" href="{h(next_href)}">Next</a>
         </div>
       </div>
+      {user_filter}
       <div class="calendar-legend">{legend}</div>
       <div class="calendar-grid">
         {weekday_header}
@@ -1702,19 +1732,21 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
           <form method="post" action="/logs/copy-previous-day" onsubmit="return confirm('Copy {am_count} morning dose{'s' if am_count != 1 else ''} from the previous day at 8:00 AM?');">
             <input type="hidden" name="target_date" value="{selected_iso}">
             <input type="hidden" name="copy_period" value="am">
-            <input type="hidden" name="return_to" value="/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}">
+            <input type="hidden" name="target_user_id" value="{selected_user_id}">
+            <input type="hidden" name="return_to" value="{h(calendar_return)}">
             <button class="secondary" type="submit" {'disabled' if am_count == 0 else ''}>Previous day AM</button>
           </form>
           <form method="post" action="/logs/copy-previous-day" onsubmit="return confirm('Copy {pm_count} evening dose{'s' if pm_count != 1 else ''} from the previous day at 8:00 PM?');">
             <input type="hidden" name="target_date" value="{selected_iso}">
             <input type="hidden" name="copy_period" value="pm">
-            <input type="hidden" name="return_to" value="/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}">
+            <input type="hidden" name="target_user_id" value="{selected_user_id}">
+            <input type="hidden" name="return_to" value="{h(calendar_return)}">
             <button class="secondary" type="submit" {'disabled' if pm_count == 0 else ''}>Previous day PM</button>
           </form>
         </div>
       </div>
       <h3>Add dose</h3>
-      {log_form(conn, return_to=f"/calendar?month={month_start.strftime('%Y-%m')}&date={selected_iso}", default_logged_at=datetime_local_for_date(selected_date), button_label="Add dose")}
+      {log_form(conn, actor_user=ctx.user, target_user_id=selected_user_id, return_to=calendar_return, default_logged_at=datetime_local_for_date(selected_date), button_label="Add dose")}
       <div class="divider"></div>
       <div class="panel-head"><h2>Logged this day</h2></div>
       <div class="card-list">{selected_log_html}</div>
@@ -1724,7 +1756,11 @@ def render_calendar(ctx: RequestContext, conn: sqlite3.Connection, params: dict[
 
 
 def calendar_log_summary_card(row: sqlite3.Row, colors: dict[str, str], return_to: str, month_start: date, selected_iso: str) -> str:
-    edit_href = f"/calendar?{urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': selected_iso, 'edit': row['id']})}"
+    params = urllib.parse.parse_qs(urllib.parse.urlparse(return_to).query)
+    edit_params = {"month": month_start.strftime("%Y-%m"), "date": selected_iso, "edit": row["id"]}
+    if params.get("user_id", [""])[0]:
+        edit_params["user_id"] = params["user_id"][0]
+    edit_href = f"/calendar?{urllib.parse.urlencode(edit_params)}"
     return f"""
     <article class="item">
       <div class="item-title"><h3>{peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
@@ -1748,7 +1784,7 @@ def calendar_log_edit_card(conn: sqlite3.Connection, row: sqlite3.Row, colors: d
       <div class="item-title"><h3>Edit {peptide_chip(row['peptide_name'], color_for_peptide(row['peptide_name'], colors))}</h3><span class="badge">{h(row['source'])}</span></div>
       {log_form(conn, row, return_to=return_to, button_label="Save dose")}
       <div class="button-row compact">
-        <a class="button secondary" href="/calendar?{h(urllib.parse.urlencode({'month': month_start.strftime('%Y-%m'), 'date': selected_iso}))}">Cancel</a>
+        <a class="button secondary" href="{h(return_to)}">Cancel</a>
         <form class="inline-form" method="post" action="/logs/delete" onsubmit="return confirm('Delete this dose log?');">
           <input type="hidden" name="log_id" value="{row['id']}">
           <input type="hidden" name="return_to" value="{h(return_to)}">
@@ -2120,7 +2156,7 @@ class App(BaseHTTPRequestHandler):
                     result = self.delete_dose_log(conn, actor_user, data)
                     redirect_to = with_flash(safe_return_to(data.get("return_to")), "Dose deleted")
                 elif path == "/logs/copy-previous-day":
-                    result = self.copy_previous_day(conn, actor_user_id, data)
+                    result = self.copy_previous_day(conn, target_user_id, data)
                     copied = int(result["copied_count"])
                     skipped = int(result["skipped_count"])
                     period = str(result["copy_period"]).upper()
@@ -2149,7 +2185,7 @@ class App(BaseHTTPRequestHandler):
             if actor_user["role"] != "admin" and int(log["user_id"]) != actor_user_id:
                 raise ValueError("Dose log not found.")
             return int(log["user_id"])
-        if path != "/logs/save" or actor_user["role"] != "admin":
+        if path not in {"/logs/save", "/logs/copy-previous-day"} or actor_user["role"] != "admin":
             return actor_user_id
         requested_user_id = int_or_default(data.get("target_user_id"), actor_user_id)
         target = one(conn, "SELECT id FROM users WHERE id = ? AND active = 1", (requested_user_id,))

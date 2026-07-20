@@ -412,6 +412,14 @@ button.text {
   margin-bottom: 14px;
 }
 
+.calendar-user-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -681,6 +689,10 @@ button.text {
   }
 
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-user-filter {
     grid-template-columns: 1fr;
   }
 

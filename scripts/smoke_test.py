@@ -317,7 +317,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.16")
+        require(settings, "App version v1.17")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
@@ -506,6 +506,23 @@ def main() -> int:
         member_history = client.get(f"/log?user_id={member_id}")
         require(member_history, "admin entered for member")
         require(member_history, "Logged for Smoke Member")
+        member_calendar = client.get(f"/calendar?month=2026-05&date=2026-05-06&user_id={member_id}")
+        require(member_calendar, "Calendar for")
+        require(member_calendar, "Smoke Member (member@example.local)")
+        require(member_calendar, "Showing Smoke Member")
+        require(member_calendar, "GHK")
+        copied_member_am = client.post(
+            "/logs/copy-previous-day",
+            {
+                "target_user_id": member_id,
+                "target_date": "2026-05-07",
+                "copy_period": "am",
+                "return_to": f"/calendar?month=2026-05&date=2026-05-07&user_id={member_id}",
+            },
+        )
+        require(copied_member_am, "Copied 1 AM dose from the previous day")
+        member_copied_calendar = client.get(f"/calendar?month=2026-05&date=2026-05-07&user_id={member_id}")
+        require(member_copied_calendar, "admin entered for member")
 
         member_client = Client(f"http://127.0.0.1:{port}")
         member_client.post("/login", {"email": "member@example.local", "password": "member-password"})
@@ -513,6 +530,9 @@ def main() -> int:
         require(member_log, "admin entered for member")
         if "Log for" in member_log:
             raise AssertionError("member account was shown the admin user selector")
+        member_calendar = member_client.get("/calendar?month=2026-05")
+        if "Calendar for" in member_calendar:
+            raise AssertionError("member account was shown the calendar user selector")
         member_client.post(
             "/logs/save",
             {
