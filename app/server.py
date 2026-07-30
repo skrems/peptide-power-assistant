@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.17"
+APP_VERSION = "v1.18"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -919,8 +919,12 @@ def injection_site_picker(selected_site: str = "") -> str:
         "Right Deltoid",
         "Left Abdomen",
         "Right Abdomen",
+        "Abdomen Far Left",
+        "Abdomen Far Right",
         "Left Thigh",
         "Right Thigh",
+        "Left Left Thigh",
+        "Right Right Thigh",
     ]
     buttons = "".join(
         f'<button class="site-button {"selected" if site == selected_site else ""}" type="button" data-site="{h(site)}" aria-pressed="{"true" if site == selected_site else "false"}">{h(site)}</button>'

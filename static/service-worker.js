@@ -1,4 +1,4 @@
-const CACHE_NAME = "peptide-power-assistant-v5";
+const CACHE_NAME = "peptide-power-assistant-v6";
 const CORE_ASSETS = [
   "/",
   "/static/styles.css",

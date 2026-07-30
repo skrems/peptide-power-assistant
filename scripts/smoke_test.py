@@ -317,9 +317,15 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.17")
+        require(settings, "App version v1.18")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
+
+        log_form = client.get("/log")
+        require(log_form, "Abdomen Far Left")
+        require(log_form, "Abdomen Far Right")
+        require(log_form, "Left Left Thigh")
+        require(log_form, "Right Right Thigh")
 
         expected_time_before = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%H:%M")
         calendar = client.get("/calendar?month=2026-05")
