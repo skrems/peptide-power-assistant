@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.18"
+APP_VERSION = "v1.19"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -177,6 +177,7 @@ def init_db() -> None:
               peptide_name TEXT NOT NULL,
               description TEXT,
               status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'retired')),
+              cycle_days INTEGER NOT NULL DEFAULT 0,
               created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -272,6 +273,7 @@ def init_db() -> None:
             """
         )
         migrate_protocol_steps(conn)
+        migrate_protocol_cycles(conn)
         migrate_peptides(conn)
         migrate_dose_audit_events(conn)
         seed_admin(conn)
@@ -279,6 +281,13 @@ def init_db() -> None:
         seed_ghk_protocol(conn)
         seed_selank_protocol(conn)
         seed_tesamorelin_protocol(conn)
+        seed_repeat_protocols(conn)
+
+
+def migrate_protocol_cycles(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(protocols)").fetchall()}
+    if "cycle_days" not in columns:
+        conn.execute("ALTER TABLE protocols ADD COLUMN cycle_days INTEGER NOT NULL DEFAULT 0")
 
 
 def migrate_protocol_steps(conn: sqlite3.Connection) -> None:
@@ -382,6 +391,8 @@ def seed_peptides(conn: sqlite3.Connection) -> None:
         ("GHK-Cu", "Copper peptide protocols.", DEFAULT_PEPTIDE_COLORS["ghk-cu"]),
         ("Selank", "SK10 cycle protocol candidate.", DEFAULT_PEPTIDE_COLORS["selank"]),
         ("Tesamorelin", "TSM10 weekday cycle protocol candidate.", DEFAULT_PEPTIDE_COLORS["tesamorelin"]),
+        ("Sermorelin Acetate", "Weekday protocol candidate.", "#315f94"),
+        ("NAD", "NAD protocol candidate.", "#60706a"),
         ("MOTS-c", "Weekday cadence protocol candidate.", DEFAULT_PEPTIDE_COLORS["mots-c"]),
         ("Retatrutide", "Weekly or every-six-days protocol candidate.", DEFAULT_PEPTIDE_COLORS["retatrutide"]),
         ("SS-31", "Daily protocol candidate.", DEFAULT_PEPTIDE_COLORS["ss-31"]),
@@ -516,6 +527,79 @@ def seed_tesamorelin_protocol(conn: sqlite3.Connection) -> None:
         [(protocol_id, *step) for step in steps],
     )
 
+
+def seed_repeat_protocols(conn: sqlite3.Connection) -> None:
+    admin = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+    created_by = admin["id"] if admin else None
+    definitions = [
+        (
+            "GHK-Cu MWF 8-on / 4-off",
+            "GHK-Cu",
+            "2 mg on Monday, Wednesday, and Friday for 8 weeks, followed by 4 weeks off; repeats.",
+            84,
+            [
+                (1, 56, 2.0, "weekdays", 1, "mon,wed,fri", "On weeks 1-8"),
+                (57, 84, 0.0, "rest", 1, "", "Off weeks 9-12"),
+            ],
+        ),
+        (
+            "Sermorelin Acetate weekdays 12-on / 4-off",
+            "Sermorelin Acetate",
+            "300 mcg on Monday through Friday for 12 weeks, followed by 4 weeks off; repeats.",
+            112,
+            [
+                (1, 84, 0.3, "weekdays", 1, "mon,tue,wed,thu,fri", "On weeks 1-12"),
+                (85, 112, 0.0, "rest", 1, "", "Off weeks 13-16"),
+            ],
+        ),
+        (
+            "Retatrutide Monday ongoing",
+            "Retatrutide",
+            "1.5 mg every Monday, ongoing.",
+            0,
+            [(1, 2147483647, 1.5, "weekdays", 1, "mon", "Every Monday; ongoing")],
+        ),
+        (
+            "NAD MWF 12-on / 2-off",
+            "NAD",
+            "50 mg on Monday, Wednesday, and Friday for 12 weeks, followed by 2 weeks off; repeats.",
+            98,
+            [
+                (1, 84, 50.0, "weekdays", 1, "mon,wed,fri", "On weeks 1-12"),
+                (85, 98, 0.0, "rest", 1, "", "Off weeks 13-14"),
+            ],
+        ),
+    ]
+    created_at = now_iso()
+    for name, peptide_name, description, cycle_days, steps in definitions:
+        protocol = conn.execute("SELECT id FROM protocols WHERE name = ?", (name,)).fetchone()
+        if protocol:
+            protocol_id = int(protocol["id"])
+        else:
+            cursor = conn.execute(
+                """
+                INSERT INTO protocols
+                  (name, peptide_name, description, status, cycle_days, created_by, created_at, updated_at, published_at)
+                VALUES (?, ?, ?, 'published', ?, ?, ?, ?, ?)
+                """,
+                (name, peptide_name, description, cycle_days, created_by, created_at, created_at, created_at),
+            )
+            protocol_id = int(cursor.lastrowid)
+
+        if not conn.execute("SELECT 1 FROM protocol_steps WHERE protocol_id = ? LIMIT 1", (protocol_id,)).fetchone():
+            conn.executemany(
+                """
+                INSERT INTO protocol_steps
+                  (protocol_id, sort_order, start_day, end_day, dose_amount, dose_unit,
+                   cadence_type, interval_days, weekdays, instructions)
+                VALUES (?, ?, ?, ?, ?, 'mg', ?, ?, ?, ?)
+                """,
+                [
+                    (protocol_id, order, start_day, end_day, dose, cadence, interval, weekdays, instructions)
+                    for order, (start_day, end_day, dose, cadence, interval, weekdays, instructions)
+                    in enumerate(steps, start=1)
+                ],
+            )
 
 def query(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
     return conn.execute(sql, args).fetchall()
@@ -678,6 +762,23 @@ def protocol_day(start_date: str, on_date: str | None = None) -> int:
     start = date.fromisoformat(start_date)
     current = date.fromisoformat(on_date or today_iso())
     return (current - start).days + 1
+
+
+def protocol_cycle_day(elapsed_day: int, cycle_days: int) -> int:
+    if cycle_days <= 0:
+        return elapsed_day
+    return ((elapsed_day - 1) % cycle_days) + 1
+
+
+def protocol_step_range(step: sqlite3.Row, cycle_days: int) -> str:
+    if int(step["end_day"]) >= 2147483647:
+        return "Ongoing"
+    suffix = f" of {cycle_days}-day cycle" if cycle_days > 0 else ""
+    return f"Days {step['start_day']}-{step['end_day']}{suffix}"
+
+
+def protocol_step_end_input(step: sqlite3.Row) -> str:
+    return "ongoing" if int(step["end_day"]) >= 2147483647 else str(step["end_day"])
 
 
 def format_dose(amount: Any) -> str:
@@ -1092,7 +1193,7 @@ def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
     enrollments = query(
         conn,
         """
-        SELECT e.*, p.name, p.peptide_name
+        SELECT e.*, p.name, p.peptide_name, p.cycle_days
         FROM enrollments e
         JOIN protocols p ON p.id = e.protocol_id
         WHERE e.user_id = ? AND e.status = 'active'
@@ -1102,6 +1203,9 @@ def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
     )
     for enrollment in enrollments:
         day = protocol_day(enrollment["start_date"], current_date)
+        if day < 1:
+            continue
+        cycle_day = protocol_cycle_day(day, int(enrollment["cycle_days"] or 0))
         step = one(
             conn,
             """
@@ -1110,9 +1214,9 @@ def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
             ORDER BY sort_order
             LIMIT 1
             """,
-            (enrollment["protocol_id"], day, day),
+            (enrollment["protocol_id"], cycle_day, cycle_day),
         )
-        if step and not step_is_due_on(step, day, current_date):
+        if step and not step_is_due_on(step, cycle_day, current_date):
             continue
         log = one(
             conn,
@@ -1124,7 +1228,7 @@ def get_due_tasks(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]
             """,
             (user_id, enrollment["id"], day),
         )
-        tasks.append({"enrollment": enrollment, "day": day, "step": step, "log": log})
+        tasks.append({"enrollment": enrollment, "day": day, "cycle_day": cycle_day, "step": step, "log": log})
     return tasks
 
 
@@ -1138,6 +1242,7 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
         step = task["step"]
         log = task["log"]
         day = task["day"]
+        cycle_day = task["cycle_day"]
         if not step:
             cards.append(
                 f"""
@@ -1154,16 +1259,25 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
         action = ""
         if not is_rest and not log:
             action = f"""
-            <form method="post" action="/log/protocol" class="grid two">
+            <form method="post" action="/log/protocol" class="quick-log-form">
               <input type="hidden" name="enrollment_id" value="{enrollment['id']}">
               <input type="hidden" name="step_id" value="{step['id']}">
               <input type="hidden" name="protocol_day" value="{day}">
-              <label>Actual dose <input name="actual_dose_amount" inputmode="decimal" value="{format_dose(step['dose_amount'])}" placeholder="1 mg or 400 mcg" required></label>
-              <label>Site <input name="site" placeholder="optional"></label>
-              <label class="grid-span">Notes <input name="notes" placeholder="optional"></label>
-              {injection_site_picker()}
-              <div class="button-row"><button type="submit">Log completed</button></div>
+              <input type="hidden" name="actual_dose_amount" value="{format_dose(step['dose_amount'])}">
+              <button type="submit">Log {format_dose(step['dose_amount'])} mg</button>
             </form>
+            <details class="dose-adjustment">
+              <summary>Adjust dose or add details</summary>
+              <form method="post" action="/log/protocol" class="stack">
+                <input type="hidden" name="enrollment_id" value="{enrollment['id']}">
+                <input type="hidden" name="step_id" value="{step['id']}">
+                <input type="hidden" name="protocol_day" value="{day}">
+                <label>Actual dose <input name="actual_dose_amount" inputmode="decimal" value="{format_dose(step['dose_amount'])}" placeholder="1 mg or 400 mcg" required></label>
+                {injection_site_picker()}
+                <label>Notes <input name="notes" placeholder="optional"></label>
+                <button class="secondary" type="submit">Log adjusted dose</button>
+              </form>
+            </details>
             """
         elif log:
             action = f'<p class="meta">Logged {h(log["logged_at"])} · {format_dose(log["actual_dose_amount"])} {h(log["dose_unit"])}</p>'
@@ -1173,11 +1287,11 @@ def render_today(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
               <div class="item-title">
                 <div>
                   <h3>{h(enrollment['name'])}</h3>
-                  <p class="meta">{h(enrollment['peptide_name'])} · protocol day {day}</p>
+                  <p class="meta">{h(enrollment['peptide_name'])} · {('cycle day ' + str(cycle_day) + ' of ' + str(enrollment['cycle_days'])) if int(enrollment['cycle_days'] or 0) else 'day ' + str(day)}</p>
                 </div>
                 <span class="badge {badge}">{badge_text}</span>
               </div>
-              <p>{format_dose(step['dose_amount'])} {h(step['dose_unit'])} · {h(cadence_label(step))} · days {step['start_day']}-{step['end_day']}</p>
+              <p>{format_dose(step['dose_amount'])} {h(step['dose_unit'])} · {h(cadence_label(step))} · {h(protocol_step_range(step, int(enrollment['cycle_days'] or 0)))}</p>
               <p class="meta">{h(step['instructions'])}</p>
               {action}
             </article>
@@ -1290,19 +1404,12 @@ def render_protocols(ctx: RequestContext, conn: sqlite3.Connection, params: dict
     for protocol in protocols:
         protocol_steps = step_map.get(protocol["id"], [])
         step_text = "<br>".join(
-            f"Days {step['start_day']}-{step['end_day']}: {format_dose(step['dose_amount'])} {h(step['dose_unit'])} · {h(cadence_label(step))}"
+            f"{h(protocol_step_range(step, int(protocol['cycle_days'] or 0)))}: {format_dose(step['dose_amount'])} {h(step['dose_unit'])} · {h(cadence_label(step))}"
             for step in protocol_steps
         )
         actions = []
         if protocol["status"] == "published":
-            actions.append(
-                f"""
-                <form class="inline-form" method="post" action="/protocols/activate">
-                  <input type="hidden" name="protocol_id" value="{protocol['id']}">
-                  <button class="secondary" type="submit">Activate</button>
-                </form>
-                """
-            )
+            actions.append(protocol_activation_form(conn, protocol["id"], ctx.user))
         if ctx.user["role"] == "admin":
             actions.append(f'<a class="button secondary" href="/protocols?edit={protocol["id"]}">Edit</a>')
             if protocol["status"] == "draft":
@@ -1347,21 +1454,23 @@ def render_protocols(ctx: RequestContext, conn: sqlite3.Connection, params: dict
             """
         )
 
+    enrollment_filter = "" if ctx.user["role"] == "admin" else "WHERE e.user_id = ?"
     enrollments = query(
         conn,
-        """
-        SELECT e.*, p.name, p.peptide_name
+        f"""
+        SELECT e.*, p.name, p.peptide_name, p.cycle_days, u.display_name AS user_name, u.email AS user_email
         FROM enrollments e JOIN protocols p ON p.id = e.protocol_id
-        WHERE e.user_id = ?
+        JOIN users u ON u.id = e.user_id
+        {enrollment_filter}
         ORDER BY e.created_at DESC
         """,
-        (ctx.user["id"],),
+        () if ctx.user["role"] == "admin" else (ctx.user["id"],),
     )
     enrollment_html = "".join(
         f"""
         <article class="item">
           <div class="item-title"><h3>{h(row['name'])}</h3><span class="badge">{h(row['status'])}</span></div>
-          <p class="meta">{h(row['peptide_name'])} · start {h(row['start_date'])} · day {protocol_day(row['start_date'])}</p>
+          <p class="meta">{(h(row['user_name']) + ' · ') if ctx.user['role'] == 'admin' else ''}{h(row['peptide_name'])} · start {h(row['start_date'])} · {('cycle day ' + str(protocol_cycle_day(protocol_day(row['start_date']), int(row['cycle_days'] or 0))) + ' of ' + str(row['cycle_days'])) if int(row['cycle_days'] or 0) else 'day ' + str(protocol_day(row['start_date']))}</p>
           <div class="button-row">
             <form class="inline-form" method="post" action="/enrollments/status">
               <input type="hidden" name="enrollment_id" value="{row['id']}">
@@ -1391,11 +1500,35 @@ def render_protocols(ctx: RequestContext, conn: sqlite3.Connection, params: dict
       <div class="card-list">{"".join(cards) if cards else '<div class="empty">No protocols yet.</div>'}</div>
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>My protocols</h2></div>
+      <div class="panel-head"><h2>{'Household enrollments' if ctx.user['role'] == 'admin' else 'My protocols'}</h2></div>
       <div class="card-list">{enrollment_html}</div>
     </section>
     """
     return layout(ctx, "/protocols", "Protocols", body)
+
+
+def protocol_activation_form(conn: sqlite3.Connection, protocol_id: int, actor: sqlite3.Row) -> str:
+    if actor["role"] != "admin":
+        return f"""
+        <form class="inline-form" method="post" action="/protocols/activate">
+          <input type="hidden" name="protocol_id" value="{protocol_id}">
+          <button class="secondary" type="submit">Activate for me</button>
+        </form>
+        """
+    users = query(conn, "SELECT id, email, display_name FROM users WHERE active = 1 ORDER BY display_name, email")
+    selected_id = int(actor["id"])
+    options = "".join(
+        f'<option value="{user["id"]}"{" selected" if int(user["id"]) == selected_id else ""}>{h(user["display_name"])} ({h(user["email"])})</option>'
+        for user in users
+    )
+    return f"""
+    <form class="inline-form protocol-assign-form" method="post" action="/protocols/activate">
+      <input type="hidden" name="protocol_id" value="{protocol_id}">
+      <label>User <select name="target_user_id">{options}</select></label>
+      <label>Start date <input type="date" name="start_date" value="{today_iso()}" required></label>
+      <button class="secondary" type="submit">Assign protocol</button>
+    </form>
+    """
 
 
 def protocol_editor(conn: sqlite3.Connection, protocol: sqlite3.Row | None) -> str:
@@ -1404,6 +1537,7 @@ def protocol_editor(conn: sqlite3.Connection, protocol: sqlite3.Row | None) -> s
     name = protocol["name"] if protocol else ""
     peptide = protocol["peptide_name"] if protocol else ""
     description = protocol["description"] if protocol else ""
+    cycle_days = int(protocol["cycle_days"] or 0) if protocol else 0
     step_protocol_id = protocol["id"] if protocol else ""
     return f"""
     <section class="panel">
@@ -1418,6 +1552,7 @@ def protocol_editor(conn: sqlite3.Connection, protocol: sqlite3.Row | None) -> s
             </select>
           </label>
         </div>
+        <label>Repeat cycle length in days <input name="cycle_days" inputmode="numeric" value="{cycle_days}" required><span class="meta">Use 0 for a protocol with no repeating on/off cycle.</span></label>
         <label>Other peptide name <input name="peptide_name_other" placeholder="Only needed if not in the dropdown"></label>
         <label>Description <textarea name="description" placeholder="Plain-language schedule summary">{h(description)}</textarea></label>
         <div class="button-row">
@@ -1432,7 +1567,7 @@ def protocol_editor(conn: sqlite3.Connection, protocol: sqlite3.Row | None) -> s
         <input type="hidden" name="protocol_id" value="{step_protocol_id}">
         <div class="grid three">
           <label>Start day <input name="start_day" inputmode="numeric" value="1" required></label>
-          <label>End day <input name="end_day" inputmode="numeric" value="15" required></label>
+          <label>End day <input name="end_day" inputmode="text" value="15" placeholder="Day or ongoing" required></label>
           <label>Dose <input name="dose_amount" inputmode="decimal" value="1" placeholder="1 mg or 400 mcg" required></label>
         </div>
         {step_cadence_fields("daily", 7, "")}
@@ -1459,7 +1594,7 @@ def step_list(protocol_id: int) -> str:
             <input type="hidden" name="protocol_id" value="{protocol_id}">
             <div class="grid three">
               <label>Start <input name="start_day" value="{step['start_day']}" required></label>
-              <label>End <input name="end_day" value="{step['end_day']}" required></label>
+              <label>End <input name="end_day" value="{protocol_step_end_input(step)}" placeholder="Day or ongoing" required></label>
               <label>Dose <input name="dose_amount" value="{format_dose(step['dose_amount'])}" placeholder="1 mg or 400 mcg" required></label>
             </div>
             {step_cadence_fields(step['cadence_type'], step['interval_days'], step['weekdays'])}
@@ -2086,13 +2221,17 @@ class App(BaseHTTPRequestHandler):
                 conn.execute("DELETE FROM protocols WHERE id = ?", (int(data["protocol_id"]),))
                 return self.redirect(with_flash("/protocols", "Protocol deleted"))
             if parsed.path == "/protocols/activate":
-                self.activate_protocol(conn, ctx.user["id"], data)
-                return self.redirect(with_flash("/protocols", "Protocol activated"))
+                self.activate_protocol(conn, ctx.user, data)
+                return self.redirect(with_flash("/protocols", "Protocol assigned" if ctx.user["role"] == "admin" else "Protocol activated"))
             if parsed.path == "/enrollments/status":
-                conn.execute(
-                    "UPDATE enrollments SET status = ? WHERE id = ? AND user_id = ?",
-                    (data["status"], int(data["enrollment_id"]), ctx.user["id"]),
-                )
+                enrollment_id = int(data["enrollment_id"])
+                enrollment = one(conn, "SELECT user_id FROM enrollments WHERE id = ?", (enrollment_id,))
+                if not enrollment or (ctx.user["role"] != "admin" and int(enrollment["user_id"]) != int(ctx.user["id"])):
+                    raise ValueError("Enrollment not found.")
+                status = data.get("status", "")
+                if status not in {"active", "paused", "completed", "stopped"}:
+                    raise ValueError("Choose a valid enrollment status.")
+                conn.execute("UPDATE enrollments SET status = ? WHERE id = ?", (status, enrollment_id))
                 return self.redirect(with_flash("/protocols", "Enrollment updated"))
             if parsed.path == "/admin/users":
                 self.require_admin(ctx)
@@ -2387,15 +2526,30 @@ class App(BaseHTTPRequestHandler):
         enrollment = one(
             conn,
             """
-            SELECT e.*, p.peptide_name
+            SELECT e.*, p.peptide_name, p.cycle_days
             FROM enrollments e JOIN protocols p ON p.id = e.protocol_id
-            WHERE e.id = ? AND e.user_id = ?
+            WHERE e.id = ? AND e.user_id = ? AND e.status = 'active'
             """,
             (int(data["enrollment_id"]), user_id),
         )
         step = one(conn, "SELECT * FROM protocol_steps WHERE id = ?", (int(data["step_id"]),))
-        if not enrollment or not step:
+        if not enrollment or not step or int(step["protocol_id"]) != int(enrollment["protocol_id"]):
             raise ValueError("Enrollment or step not found.")
+        elapsed_day = protocol_day(enrollment["start_date"], today_iso())
+        cycle_day = protocol_cycle_day(elapsed_day, int(enrollment["cycle_days"] or 0))
+        if int_or_default(data.get("protocol_day"), -1) != elapsed_day:
+            raise ValueError("This dose is no longer scheduled for today. Refresh the page and try again.")
+        if not int(step["start_day"]) <= cycle_day <= int(step["end_day"]) or not step_is_due_on(step, cycle_day, today_iso()):
+            raise ValueError("This protocol step is not due today.")
+        if float(step["dose_amount"]) <= 0:
+            raise ValueError("Rest days cannot be logged as doses.")
+        existing_log = one(
+            conn,
+            "SELECT id FROM dose_logs WHERE user_id = ? AND enrollment_id = ? AND protocol_day = ? LIMIT 1",
+            (user_id, enrollment["id"], elapsed_day),
+        )
+        if existing_log:
+            raise ValueError("This protocol dose has already been logged today.")
         logged_at = now_iso()
         actual_dose = parse_dose_mg(data["actual_dose_amount"], "Actual dose")
         cursor = conn.execute(
@@ -2521,25 +2675,26 @@ class App(BaseHTTPRequestHandler):
         name = data["name"].strip()
         peptide_name = peptide_name_from_form(data)
         description = data.get("description", "").strip()
+        cycle_days = max(0, int_or_default(data.get("cycle_days"), 0))
         if not peptide_name:
             raise ValueError("Choose or enter a peptide name.")
         if protocol_id:
             conn.execute(
                 """
                 UPDATE protocols
-                SET name = ?, peptide_name = ?, description = ?, updated_at = ?
+                SET name = ?, peptide_name = ?, description = ?, cycle_days = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (name, peptide_name, description, now_iso(), protocol_id),
+                (name, peptide_name, description, cycle_days, now_iso(), protocol_id),
             )
             return protocol_id
         cursor = conn.execute(
             """
             INSERT INTO protocols
-              (name, peptide_name, description, status, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, 'draft', ?, ?, ?)
+              (name, peptide_name, description, status, cycle_days, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, 'draft', ?, ?, ?, ?)
             """,
-            (name, peptide_name, description, user_id, now_iso(), now_iso()),
+            (name, peptide_name, description, cycle_days, user_id, now_iso(), now_iso()),
         )
         return int(cursor.lastrowid)
 
@@ -2547,7 +2702,10 @@ class App(BaseHTTPRequestHandler):
         protocol_id = int(data["protocol_id"])
         step_id = int(data.get("step_id") or 0)
         start_day = int(data["start_day"])
-        end_day = int(data["end_day"])
+        raw_end_day = data["end_day"].strip().lower()
+        end_day = 2147483647 if raw_end_day in {"ongoing", "open", "no end"} else int(raw_end_day)
+        if start_day < 1 or end_day < start_day:
+            raise ValueError("Step end day must be the same as or later than its start day.")
         dose_amount = parse_dose_mg(data["dose_amount"])
         cadence_type = data.get("cadence_type", "daily").strip()
         if cadence_type not in {"daily", "every_n_days", "weekdays", "rest"}:
@@ -2582,22 +2740,41 @@ class App(BaseHTTPRequestHandler):
         )
         return protocol_id
 
-    def activate_protocol(self, conn: sqlite3.Connection, user_id: int, data: dict[str, str]) -> None:
+    def activate_protocol(self, conn: sqlite3.Connection, actor_user: sqlite3.Row, data: dict[str, str]) -> None:
         protocol_id = int(data["protocol_id"])
+        actor_id = int(actor_user["id"])
+        if actor_user["role"] == "admin" and data.get("target_user_id"):
+            user_id = int(data["target_user_id"])
+        else:
+            user_id = actor_id
+        target = one(conn, "SELECT id FROM users WHERE id = ? AND active = 1", (user_id,))
+        protocol = one(conn, "SELECT id FROM protocols WHERE id = ? AND status = 'published'", (protocol_id,))
+        if not target or not protocol:
+            raise ValueError("Choose an active user and a published protocol.")
+        admin_assignment = actor_user["role"] == "admin" and data.get("target_user_id") is not None
+        start_date = today_iso()
+        if admin_assignment:
+            try:
+                start_date = date.fromisoformat(data.get("start_date", "")).isoformat()
+            except ValueError as exc:
+                raise ValueError("Choose a valid protocol start date.") from exc
         existing = one(
             conn,
             "SELECT id FROM enrollments WHERE user_id = ? AND protocol_id = ? AND status IN ('active', 'paused')",
             (user_id, protocol_id),
         )
         if existing:
-            conn.execute("UPDATE enrollments SET status = 'active' WHERE id = ?", (existing["id"],))
+            if admin_assignment:
+                conn.execute("UPDATE enrollments SET status = 'active', start_date = ? WHERE id = ?", (start_date, existing["id"]))
+            else:
+                conn.execute("UPDATE enrollments SET status = 'active' WHERE id = ?", (existing["id"],))
             return
         conn.execute(
             """
             INSERT INTO enrollments (user_id, protocol_id, start_date, status, reminder_time, created_at)
             VALUES (?, ?, ?, 'active', '09:00', ?)
             """,
-            (user_id, protocol_id, today_iso(), now_iso()),
+            (user_id, protocol_id, start_date, now_iso()),
         )
 
     def create_user(self, conn: sqlite3.Connection, data: dict[str, str]) -> None:

@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-08-15
+Last updated: 2026-10-19
 
 ## Summary
 
@@ -11,8 +11,8 @@ Peptide Power Assistant is a self-hosted Python/SQLite application for household
 - Local path: `/Users/skrems/Projects/peptide-power-assistant`
 - GitHub: `git@github.com:skrems/peptide-power-assistant.git`
 - Branch: `main`
-- Current release: `v1.18`
-- Image: `ghcr.io/skrems/peptide-power-assistant:v1.18`
+- Current source version: `v1.19` (not yet published)
+- Last published image: `ghcr.io/skrems/peptide-power-assistant:v1.18`
 - ZimaOS app: `peptide-power-assistant`
 - Production port: `8080`
 - Application timezone: `America/Los_Angeles`
@@ -22,6 +22,8 @@ Peptide Power Assistant is a self-hosted Python/SQLite application for household
 - Local email/password users with admin and member roles.
 - Admin peptide catalog with short codes and colors.
 - Protocol creation, versioned steps, publishing, retirement, enrollment, and Today view.
+- Repeating on/off cycles, open-ended protocol steps, admin assignment to household users, and start-date selection.
+- One-tap dose logging from Today with an optional adjustment/details form.
 - Manual and protocol dose logging with mg/mcg input normalization.
 - Admin dose entry and calendar review for another user.
 - Dose audit events distinguish the acting user from the dose owner.
@@ -79,3 +81,10 @@ The compose file sets the stable project/container name, persistent volume, Paci
 ## Current Direction
 
 Continue improving protocol and calendar workflows without weakening authorization or auditability. Treat database compatibility with Peptide Inventory as a release requirement.
+
+## Pending v1.19 Change
+
+- On first startup with the updated source, the app adds `cycle_days` to `protocols` and seeds four published protocol definitions.
+- Assign these published protocol templates to the intended household user from the admin Protocols page and enter their start dates there. Initial enrollment details are intentionally kept out of the repository.
+- Existing dose logs and shared inventory tables are retained. Elapsed protocol days remain the dose-log key while cycle days wrap for schedule lookup.
+- The live ZimaBoard database has not yet been migrated by this source change.

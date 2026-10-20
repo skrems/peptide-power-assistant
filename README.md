@@ -7,12 +7,14 @@ Self-hosted protocol and dose tracker for a Zimaboard or similar local server. T
 - Local username/password login.
 - Admin and member roles.
 - Admin protocol create, edit, publish, retire, and delete.
+- Repeating protocol cycles with configurable on/off periods, user assignment, and start dates.
 - Admin peptide catalog for dropdowns in protocols and manual logging.
 - Editable protocol day ranges and dose steps.
 - Protocol and dose fields accept mg or mcg input, such as `0.4 mg` or `400 mcg`.
-- Seeded published protocols include GHK-Cu, Selank SK10, and Tesamorelin TSM10 user-provided cycles.
+- Seeded published protocols include GHK-Cu, Selank SK10, Tesamorelin TSM10, and repeat-cycle templates for GHK-Cu, Sermorelin, Retatrutide, and NAD.
 - Published protocol activation for users.
 - Today view showing protocol day, dose due, rest days, and completion state.
+- One-tap protocol dose logging from the Today view, with optional dose adjustment and injection details.
 - Dose log with protocol and manual entries, user and peptide filtering, edit, and delete.
 - Admin entry of manual doses on behalf of another user; standard users remain limited to their own records.
 - Dose audit trail records both the person entering a dose and the user who owns it, plus attempts, successful saves, deletes, validation errors, and expired-session redirects.
@@ -161,10 +163,10 @@ The app database is stored at:
 
 ### Image
 
-The current Zimaboard deployment is pinned to:
+The last published Zimaboard image is `v1.18`. Source is prepared for `v1.19`, which is not published yet. The next compose update will use:
 
 ```text
-ghcr.io/skrems/peptide-power-assistant:v1.18
+ghcr.io/skrems/peptide-power-assistant:v1.19
 ```
 
 GitHub Actions also publishes `latest` and `sha-...` tags for traceability, but ZimaOS custom apps should use explicit `vX.Y` tags. The dashboard does not reliably detect a changed digest under the same custom tag.
@@ -203,7 +205,7 @@ name: peptide-power-assistant
 
 services:
   peptide-power-assistant:
-    image: ghcr.io/skrems/peptide-power-assistant:v1.18
+    image: ghcr.io/skrems/peptide-power-assistant:v1.19
     container_name: peptide-power-assistant
     restart: unless-stopped
     ports:

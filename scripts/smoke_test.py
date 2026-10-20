@@ -317,7 +317,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.18")
+        require(settings, "App version v1.19")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
