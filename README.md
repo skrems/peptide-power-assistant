@@ -163,7 +163,7 @@ The app database is stored at:
 
 ### Image
 
-The last published Zimaboard image is `v1.18`. Source is prepared for `v1.19`, which is not published yet. The next compose update will use:
+The current Zimaboard image is `v1.19`. The compose update uses:
 
 ```text
 ghcr.io/skrems/peptide-power-assistant:v1.19

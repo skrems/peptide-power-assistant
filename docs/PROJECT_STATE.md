@@ -11,8 +11,8 @@ Peptide Power Assistant is a self-hosted Python/SQLite application for household
 - Local path: `/Users/skrems/Projects/peptide-power-assistant`
 - GitHub: `git@github.com:skrems/peptide-power-assistant.git`
 - Branch: `main`
-- Current source version: `v1.19` (not yet published)
-- Last published image: `ghcr.io/skrems/peptide-power-assistant:v1.18`
+- Current release: `v1.19`
+- Image: `ghcr.io/skrems/peptide-power-assistant:v1.19`
 - ZimaOS app: `peptide-power-assistant`
 - Production port: `8080`
 - Application timezone: `America/Los_Angeles`
@@ -82,9 +82,10 @@ The compose file sets the stable project/container name, persistent volume, Paci
 
 Continue improving protocol and calendar workflows without weakening authorization or auditability. Treat database compatibility with Peptide Inventory as a release requirement.
 
-## Pending v1.19 Change
+## v1.19 Rollout
 
-- On first startup with the updated source, the app adds `cycle_days` to `protocols` and seeds four published protocol definitions.
-- Assign these published protocol templates to the intended household user from the admin Protocols page and enter their start dates there. Initial enrollment details are intentionally kept out of the repository.
-- Existing dose logs and shared inventory tables are retained. Elapsed protocol days remain the dose-log key while cycle days wrap for schedule lookup.
-- The live ZimaBoard database has not yet been migrated by this source change.
+- Published and running on ZimaBoard as of 2026-10-19.
+- Migration adds `cycle_days` to `protocols`; four published repeat-cycle definitions are seeded at startup.
+- Existing dose logs and shared inventory tables were retained. Elapsed protocol days remain the dose-log key while cycle days wrap for schedule lookup.
+- Live household enrollments were applied directly to the database after making a pre-release backup; dates and user details are intentionally kept out of the repository.
+- Pre-update SQLite backup is stored under `/DATA/AppData/peptide-power-assistant/backups` on ZimaBoard.
