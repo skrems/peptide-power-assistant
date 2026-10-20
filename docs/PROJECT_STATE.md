@@ -11,8 +11,8 @@ Peptide Power Assistant is a self-hosted Python/SQLite application for household
 - Local path: `/Users/skrems/Projects/peptide-power-assistant`
 - GitHub: `git@github.com:skrems/peptide-power-assistant.git`
 - Branch: `main`
-- Current release: `v1.20`
-- Image: `ghcr.io/skrems/peptide-power-assistant:v1.20`
+- Current release: `v1.21`
+- Image: `ghcr.io/skrems/peptide-power-assistant:v1.21`
 - ZimaOS app: `peptide-power-assistant`
 - Production port: `8080`
 - Application timezone: `America/Los_Angeles`
@@ -94,4 +94,8 @@ Continue improving protocol and calendar workflows without weakening authorizati
 ## v1.20
 
 - Adds admin password reset controls to the Users section.
-- Password reset is explicit per user, requires matching values of at least 12 characters, and signs the target out of other active sessions.
+- Password reset is explicit per user, requires matching values of at least 8 characters, and signs the target out of other active sessions.
+
+## v1.21
+
+- Password reset minimum length is 8 characters, enforced in both the browser and server.

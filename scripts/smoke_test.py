@@ -317,7 +317,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.20")
+        require(settings, "App version v1.21")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
@@ -501,8 +501,21 @@ def main() -> int:
                 "/admin/user-password",
                 {
                     "user_id": member_id,
-                    "new_password": "replacement-password-2026",
-                    "confirm_password": "different-password-2026",
+                    "new_password": "short7!",
+                    "confirm_password": "short7!",
+                },
+            )
+        except urllib.error.HTTPError as exc:
+            require(exc.read().decode("utf-8"), "at least 8 characters")
+        else:
+            raise AssertionError("password reset accepted a password shorter than 8 characters")
+        try:
+            client.post(
+                "/admin/user-password",
+                {
+                    "user_id": member_id,
+                    "new_password": "passwrd8",
+                    "confirm_password": "diffpass8",
                 },
             )
         except urllib.error.HTTPError as exc:
@@ -513,15 +526,15 @@ def main() -> int:
             "/admin/user-password",
             {
                 "user_id": member_id,
-                "new_password": "replacement-password-2026",
-                "confirm_password": "replacement-password-2026",
+                "new_password": "passwrd8",
+                "confirm_password": "passwrd8",
             },
         )
         require(member_client.get("/login"), "Log in")
         replacement_client = Client(f"http://127.0.0.1:{port}")
         replacement_client.post(
             "/login",
-            {"email": "member@example.local", "password": "replacement-password-2026"},
+            {"email": "member@example.local", "password": "passwrd8"},
         )
         require(replacement_client.get("/"), "Today")
 

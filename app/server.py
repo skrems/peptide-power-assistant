@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.20"
+APP_VERSION = "v1.21"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -1955,10 +1955,10 @@ def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
           <form method="post" action="/admin/user-password" class="stack">
             <input type="hidden" name="user_id" value="{row['id']}">
             <div class="grid two">
-              <label>New password <input name="new_password" type="password" minlength="12" autocomplete="new-password" required></label>
-              <label>Confirm password <input name="confirm_password" type="password" minlength="12" autocomplete="new-password" required></label>
+              <label>New password <input name="new_password" type="password" minlength="8" autocomplete="new-password" required></label>
+              <label>Confirm password <input name="confirm_password" type="password" minlength="8" autocomplete="new-password" required></label>
             </div>
-            <p class="meta">At least 12 characters. Resetting signs this user out of other devices.</p>
+            <p class="meta">At least 8 characters. Resetting signs this user out of other devices.</p>
             <button class="secondary" type="submit">Reset password</button>
           </form>
         </article>
@@ -2810,8 +2810,8 @@ class App(BaseHTTPRequestHandler):
     ) -> None:
         user_id = int(data.get("user_id", "0"))
         new_password = data.get("new_password", "")
-        if len(new_password) < 12:
-            raise ValueError("New passwords must be at least 12 characters.")
+        if len(new_password) < 8:
+            raise ValueError("New passwords must be at least 8 characters.")
         if new_password != data.get("confirm_password", ""):
             raise ValueError("The password confirmation does not match.")
         target = one(conn, "SELECT id FROM users WHERE id = ?", (user_id,))
