@@ -224,9 +224,9 @@ def main() -> int:
 
         client.post("/protocols/activate", {"protocol_id": "1"})
         today = client.get("/")
-        require(today, "protocol day 1")
+        require(today, "day 1")
         require(today, "1 mg")
-        require(today, "Log completed")
+        require(today, "Log 1 mg")
         require(today, "/static/body-map.svg")
         require(today, "Left Deltoid")
 
@@ -317,7 +317,7 @@ def main() -> int:
         )
 
         settings = client.get("/settings")
-        require(settings, "App version v1.19")
+        require(settings, "App version v1.20")
         require(settings, "Recent Dose Audit")
         require(settings, "Success: manual create")
 
@@ -473,6 +473,7 @@ def main() -> int:
         require(admin, 'value="#e86f00"')
         require(admin, 'value="#8b0000"')
         require(admin, "Add user")
+        require(admin, "Reset password")
         require(admin, ADMIN_EMAIL)
         require(admin, "Export backup file")
 
@@ -492,6 +493,38 @@ def main() -> int:
             },
         )
         member_id = user_id(db_path, "member@example.local")
+        member_client = Client(f"http://127.0.0.1:{port}")
+        member_client.post("/login", {"email": "member@example.local", "password": "member-password"})
+        require(member_client.get("/"), "Today")
+        try:
+            client.post(
+                "/admin/user-password",
+                {
+                    "user_id": member_id,
+                    "new_password": "replacement-password-2026",
+                    "confirm_password": "different-password-2026",
+                },
+            )
+        except urllib.error.HTTPError as exc:
+            require(exc.read().decode("utf-8"), "password confirmation does not match")
+        else:
+            raise AssertionError("password reset accepted mismatched confirmation")
+        client.post(
+            "/admin/user-password",
+            {
+                "user_id": member_id,
+                "new_password": "replacement-password-2026",
+                "confirm_password": "replacement-password-2026",
+            },
+        )
+        require(member_client.get("/login"), "Log in")
+        replacement_client = Client(f"http://127.0.0.1:{port}")
+        replacement_client.post(
+            "/login",
+            {"email": "member@example.local", "password": "replacement-password-2026"},
+        )
+        require(replacement_client.get("/"), "Today")
+
         admin_log = client.get("/log")
         require(admin_log, "Log for")
         require(admin_log, "Smoke Member (member@example.local)")
@@ -530,16 +563,28 @@ def main() -> int:
         member_copied_calendar = client.get(f"/calendar?month=2026-05&date=2026-05-07&user_id={member_id}")
         require(member_copied_calendar, "admin entered for member")
 
-        member_client = Client(f"http://127.0.0.1:{port}")
-        member_client.post("/login", {"email": "member@example.local", "password": "member-password"})
-        member_log = member_client.get("/log")
+        member_log = replacement_client.get("/log")
         require(member_log, "admin entered for member")
         if "Log for" in member_log:
             raise AssertionError("member account was shown the admin user selector")
-        member_calendar = member_client.get("/calendar?month=2026-05")
+        member_calendar = replacement_client.get("/calendar?month=2026-05")
         if "Calendar for" in member_calendar:
             raise AssertionError("member account was shown the calendar user selector")
-        member_client.post(
+        try:
+            replacement_client.post(
+                "/admin/user-password",
+                {
+                    "user_id": user_id(db_path, ADMIN_EMAIL),
+                    "new_password": "another-replacement-password",
+                    "confirm_password": "another-replacement-password",
+                },
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code != 403:
+                raise AssertionError(f"member password reset returned HTTP {exc.code}") from exc
+        else:
+            raise AssertionError("member account was allowed to reset a password")
+        replacement_client.post(
             "/logs/save",
             {
                 "log_id": "",
@@ -560,7 +605,7 @@ def main() -> int:
         if not owner or str(owner[0]) != member_id:
             raise AssertionError("member was able to assign a dose to another user")
         try:
-            member_client.get_bytes("/backup")
+            replacement_client.get_bytes("/backup")
         except urllib.error.HTTPError as exc:
             if exc.code != 403:
                 raise AssertionError(f"member backup export returned {exc.code}, expected 403") from exc

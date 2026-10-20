@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 APP_NAME = "Peptide Power Assistant"
-APP_VERSION = "v1.19"
+APP_VERSION = "v1.20"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = Path(os.environ.get("PEPTIDE_DB", ROOT / "data" / "app.db"))
@@ -1952,6 +1952,15 @@ def render_admin(ctx: RequestContext, conn: sqlite3.Connection) -> bytes:
             <input type="hidden" name="active" value="{0 if row['active'] else 1}">
             <button class="secondary" type="submit">{'Disable' if row['active'] else 'Enable'}</button>
           </form>
+          <form method="post" action="/admin/user-password" class="stack">
+            <input type="hidden" name="user_id" value="{row['id']}">
+            <div class="grid two">
+              <label>New password <input name="new_password" type="password" minlength="12" autocomplete="new-password" required></label>
+              <label>Confirm password <input name="confirm_password" type="password" minlength="12" autocomplete="new-password" required></label>
+            </div>
+            <p class="meta">At least 12 characters. Resetting signs this user out of other devices.</p>
+            <button class="secondary" type="submit">Reset password</button>
+          </form>
         </article>
         """
         for row in users
@@ -2241,6 +2250,10 @@ class App(BaseHTTPRequestHandler):
                 self.require_admin(ctx)
                 conn.execute("UPDATE users SET active = ? WHERE id = ?", (int(data["active"]), int(data["user_id"])))
                 return self.redirect(with_flash("/admin", "User updated"))
+            if parsed.path == "/admin/user-password":
+                self.require_admin(ctx)
+                self.reset_user_password(conn, ctx.user, data)
+                return self.redirect(with_flash("/admin", "User password reset"))
             if parsed.path == "/admin/peptides":
                 self.require_admin(ctx)
                 self.create_peptide(conn, data)
@@ -2791,6 +2804,27 @@ class App(BaseHTTPRequestHandler):
                 now_iso(),
             ),
         )
+
+    def reset_user_password(
+        self, conn: sqlite3.Connection, actor_user: sqlite3.Row, data: dict[str, str]
+    ) -> None:
+        user_id = int(data.get("user_id", "0"))
+        new_password = data.get("new_password", "")
+        if len(new_password) < 12:
+            raise ValueError("New passwords must be at least 12 characters.")
+        if new_password != data.get("confirm_password", ""):
+            raise ValueError("The password confirmation does not match.")
+        target = one(conn, "SELECT id FROM users WHERE id = ?", (user_id,))
+        if not target:
+            raise ValueError("User not found.")
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (password_hash(new_password), user_id),
+        )
+        current_sid = parse_cookies(self.headers.get("Cookie")).get("sid", "")
+        for sid, session_user_id in list(SESSIONS.items()):
+            if session_user_id == user_id and not (user_id == int(actor_user["id"]) and sid == current_sid):
+                SESSIONS.pop(sid, None)
 
     def create_peptide(self, conn: sqlite3.Connection, data: dict[str, str]) -> None:
         name = data["name"].strip()

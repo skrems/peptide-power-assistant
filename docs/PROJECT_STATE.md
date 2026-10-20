@@ -11,8 +11,8 @@ Peptide Power Assistant is a self-hosted Python/SQLite application for household
 - Local path: `/Users/skrems/Projects/peptide-power-assistant`
 - GitHub: `git@github.com:skrems/peptide-power-assistant.git`
 - Branch: `main`
-- Current release: `v1.19`
-- Image: `ghcr.io/skrems/peptide-power-assistant:v1.19`
+- Current release: `v1.20`
+- Image: `ghcr.io/skrems/peptide-power-assistant:v1.20`
 - ZimaOS app: `peptide-power-assistant`
 - Production port: `8080`
 - Application timezone: `America/Los_Angeles`
@@ -24,6 +24,7 @@ Peptide Power Assistant is a self-hosted Python/SQLite application for household
 - Protocol creation, versioned steps, publishing, retirement, enrollment, and Today view.
 - Repeating on/off cycles, open-ended protocol steps, admin assignment to household users, and start-date selection.
 - One-tap dose logging from Today with an optional adjustment/details form.
+- Admin password reset per user with confirmation, minimum length validation, and session invalidation.
 - Manual and protocol dose logging with mg/mcg input normalization.
 - Admin dose entry and calendar review for another user.
 - Dose audit events distinguish the acting user from the dose owner.
@@ -89,3 +90,8 @@ Continue improving protocol and calendar workflows without weakening authorizati
 - Existing dose logs and shared inventory tables were retained. Elapsed protocol days remain the dose-log key while cycle days wrap for schedule lookup.
 - Live household enrollments were applied directly to the database after making a pre-release backup; dates and user details are intentionally kept out of the repository.
 - Pre-update SQLite backup is stored under `/DATA/AppData/peptide-power-assistant/backups` on ZimaBoard.
+
+## v1.20
+
+- Adds admin password reset controls to the Users section.
+- Password reset is explicit per user, requires matching values of at least 12 characters, and signs the target out of other active sessions.
